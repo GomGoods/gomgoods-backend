@@ -1,4 +1,4 @@
-import { hash } from 'argon2';
+import { hash, verify } from 'argon2';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AccountType, UserStatus } from '../../generated/prisma/enums.js';
@@ -56,6 +56,11 @@ describe('AuthService', () => {
         passwordHash: expect.not.stringContaining('correct-horse-battery'),
       }),
     );
+    const createInput = users.create.mock.calls[0][0];
+    expect(createInput.passwordHash).toMatch(/^\$argon2id\$/);
+    await expect(
+      verify(createInput.passwordHash, 'correct-horse-battery'),
+    ).resolves.toBe(true);
     expect(result).toMatchObject({ accessToken: 'signed-token' });
     expect(result.user).not.toHaveProperty('passwordHash');
   });

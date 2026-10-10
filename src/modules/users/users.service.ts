@@ -2,6 +2,7 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { Prisma } from '../../generated/prisma/client.js';
 import {
   authUserSelect,
   safeUserSelect,
@@ -41,10 +42,36 @@ export class UsersService {
       );
     }
 
-    return this.prisma.user.create({
-      data: input,
-      select: safeUserSelect,
-    });
+    try {
+      return await this.prisma.user.create({
+        data: input,
+        select: safeUserSelect,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        const target = Array.isArray(error.meta?.target)
+          ? error.meta.target.map(String)
+          : [];
+        if (target.includes('email')) {
+          throw new ApiException(
+            'EMAIL_ALREADY_EXISTS',
+            'An account with this email already exists',
+            HttpStatus.CONFLICT,
+          );
+        }
+        if (target.includes('username')) {
+          throw new ApiException(
+            'USERNAME_ALREADY_EXISTS',
+            'An account with this username already exists',
+            HttpStatus.CONFLICT,
+          );
+        }
+      }
+      throw error;
+    }
   }
 
   findAuthUserByEmail(email: string): Promise<AuthUser | null> {

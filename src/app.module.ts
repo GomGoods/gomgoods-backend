@@ -22,7 +22,6 @@ import { PrismaModule } from './prisma/prisma.module.js';
       validate: validateEnvironment,
     }),
     ThrottlerModule.forRoot({
-      skipIf: () => process.env.NODE_ENV === 'test',
       throttlers: [{ ttl: 60_000, limit: 100 }],
     }),
     PrismaModule,

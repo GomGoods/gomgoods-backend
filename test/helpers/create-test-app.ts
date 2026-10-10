@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/bootstrap/configure-app.js';
+import { databaseTargetsMatch } from '../../src/config/environment.js';
 import { PrismaService } from '../../src/prisma/prisma.service.js';
 
 export async function createTestApp(): Promise<INestApplication> {
@@ -25,6 +26,15 @@ export async function createTestApp(): Promise<INestApplication> {
     await app.close();
     throw new Error('E2E database name must contain "test"');
   }
+  if (
+    databaseTargetsMatch(
+      config.getOrThrow<string>('APPLICATION_DATABASE_URL'),
+      testDatabaseUrl,
+    )
+  ) {
+    await app.close();
+    throw new Error('TEST_DATABASE_URL must target a separate database');
+  }
   return app;
 }
 
@@ -35,6 +45,14 @@ export async function cleanE2eUsers(app: INestApplication): Promise<void> {
     config.getOrThrow<string>('TEST_DATABASE_URL')
   ) {
     throw new Error('Refusing e2e cleanup outside TEST_DATABASE_URL');
+  }
+  if (
+    databaseTargetsMatch(
+      config.getOrThrow<string>('APPLICATION_DATABASE_URL'),
+      config.getOrThrow<string>('TEST_DATABASE_URL'),
+    )
+  ) {
+    throw new Error('Refusing cleanup against the application database');
   }
   await app.get(PrismaService).user.deleteMany({
     where: { email: { endsWith: '@e2e.gomgoods.local' } },

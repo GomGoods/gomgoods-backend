@@ -10,8 +10,9 @@ import type { Response } from 'express';
 
 import { Prisma } from '../../generated/prisma/client.js';
 import { ApiException } from '../exceptions/api.exception.js';
+import type { ApiErrorCode } from '../exceptions/api.exception.js';
 
-const statusCodes: Partial<Record<number, string>> = {
+const statusCodes: Partial<Record<number, ApiErrorCode>> = {
   400: 'BAD_REQUEST',
   401: 'AUTHENTICATION_REQUIRED',
   403: 'FORBIDDEN',

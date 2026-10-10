@@ -9,9 +9,9 @@ import type { Request } from 'express';
 
 import { IS_PUBLIC_KEY } from '../../../common/decorators/public.decorator.js';
 import { ApiException } from '../../../common/exceptions/api.exception.js';
-import { UserStatus } from '../../../generated/prisma/enums.js';
 import { UsersService } from '../../users/users.service.js';
 import { AccessTokenService } from '../access-token.service.js';
+import { assertAccountActive } from '../account-access.policy.js';
 
 @Injectable()
 export class AccessTokenGuard implements CanActivate {
@@ -61,20 +61,7 @@ export class AccessTokenGuard implements CanActivate {
         HttpStatus.UNAUTHORIZED,
       );
     }
-    if (user.status === UserStatus.SUSPENDED) {
-      throw new ApiException(
-        'ACCOUNT_SUSPENDED',
-        'This account is suspended',
-        HttpStatus.FORBIDDEN,
-      );
-    }
-    if (user.status === UserStatus.DELETED) {
-      throw new ApiException(
-        'ACCOUNT_DELETED',
-        'This account is unavailable',
-        HttpStatus.FORBIDDEN,
-      );
-    }
+    assertAccountActive(user.status);
 
     Object.assign(request, { user });
     return true;

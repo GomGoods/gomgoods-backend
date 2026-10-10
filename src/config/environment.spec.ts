@@ -36,6 +36,18 @@ describe('validateEnvironment', () => {
     ).toThrow('TEST_DATABASE_URL must not match DATABASE_URL');
   });
 
+  it('rejects equivalent database identities despite URL spelling differences', () => {
+    expect(() =>
+      validateEnvironment({
+        ...validEnvironment,
+        DATABASE_URL:
+          'postgresql://gomgoods:gomgoods@localhost:5432/gomgoods_test',
+        TEST_DATABASE_URL:
+          'postgresql://gomgoods:different@127.0.0.1/gomgoods_test?schema=other',
+      }),
+    ).toThrow('TEST_DATABASE_URL must not match DATABASE_URL');
+  });
+
   it('rejects short access-token secrets', () => {
     expect(() =>
       validateEnvironment({

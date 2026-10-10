@@ -154,4 +154,19 @@ describe('Phase 1 API (e2e)', () => {
       .expect(403);
     expect(response.body.error.code).toBe('ACCOUNT_DELETED');
   });
+
+  it('rate limits repeated login attempts', async () => {
+    let response: request.Response | undefined;
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      response = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: 'rate-limit-missing@e2e.gomgoods.local',
+          password: 'incorrect-password',
+        });
+      if (response.status === 429) break;
+    }
+    expect(response?.status).toBe(429);
+    expect(response?.body.error.code).toBe('RATE_LIMIT_EXCEEDED');
+  });
 });

@@ -4,6 +4,7 @@ export interface AppEnvironment {
   NODE_ENV: NodeEnvironment;
   PORT: number;
   DATABASE_URL: string;
+  APPLICATION_DATABASE_URL: string;
   TEST_DATABASE_URL?: string;
   JWT_ACCESS_SECRET: string;
   JWT_ACCESS_TTL: '15m';
@@ -11,6 +12,22 @@ export interface AppEnvironment {
   JWT_AUDIENCE: string;
   CORS_ORIGINS: string[];
   SWAGGER_ENABLED: boolean;
+}
+
+function databaseIdentity(value: string): string {
+  const url = new URL(value);
+  const hostname = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(
+    url.hostname.toLowerCase(),
+  )
+    ? 'loopback'
+    : url.hostname.toLowerCase();
+  const port = url.port || '5432';
+  const database = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+  return `${hostname}:${port}/${database}`;
+}
+
+export function databaseTargetsMatch(left: string, right: string): boolean {
+  return databaseIdentity(left) === databaseIdentity(right);
 }
 
 function requiredString(
@@ -65,7 +82,7 @@ export function validateEnvironment(
     if (!testDatabaseUrl) {
       throw new Error('TEST_DATABASE_URL is required when NODE_ENV is test');
     }
-    if (testDatabaseUrl === applicationDatabaseUrl) {
+    if (databaseTargetsMatch(testDatabaseUrl, applicationDatabaseUrl)) {
       throw new Error('TEST_DATABASE_URL must not match DATABASE_URL');
     }
     const testDatabaseName = new URL(testDatabaseUrl).pathname.toLowerCase();
@@ -105,6 +122,7 @@ export function validateEnvironment(
     PORT: port,
     DATABASE_URL:
       nodeEnvironment === 'test' ? testDatabaseUrl! : applicationDatabaseUrl,
+    APPLICATION_DATABASE_URL: applicationDatabaseUrl,
     TEST_DATABASE_URL: testDatabaseUrl,
     JWT_ACCESS_SECRET: jwtAccessSecret,
     JWT_ACCESS_TTL: '15m',

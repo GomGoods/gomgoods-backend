@@ -2,10 +2,10 @@ import { HttpStatus, Injectable } from '@nestjs/common';
 import { argon2id, hash, verify } from 'argon2';
 
 import { ApiException } from '../../common/exceptions/api.exception.js';
-import { UserStatus } from '../../generated/prisma/enums.js';
 import type { AuthUser, SafeUser } from '../users/user.select.js';
 import { UsersService } from '../users/users.service.js';
 import { AccessTokenService } from './access-token.service.js';
+import { assertAccountActive } from './account-access.policy.js';
 import type { LoginDto } from './dto/login.dto.js';
 import type { RegisterDto } from './dto/register.dto.js';
 
@@ -45,7 +45,7 @@ export class AuthService {
         HttpStatus.UNAUTHORIZED,
       );
     }
-    this.assertActive(user);
+    assertAccountActive(user.status);
     return this.resultFor(this.withoutPassword(user));
   }
 
@@ -55,23 +55,6 @@ export class AuthService {
       accountType: user.accountType,
     });
     return { user, ...token };
-  }
-
-  private assertActive(user: AuthUser): void {
-    if (user.status === UserStatus.SUSPENDED) {
-      throw new ApiException(
-        'ACCOUNT_SUSPENDED',
-        'This account is suspended',
-        HttpStatus.FORBIDDEN,
-      );
-    }
-    if (user.status === UserStatus.DELETED) {
-      throw new ApiException(
-        'ACCOUNT_DELETED',
-        'This account is unavailable',
-        HttpStatus.FORBIDDEN,
-      );
-    }
   }
 
   private withoutPassword(user: AuthUser): SafeUser {
