@@ -87,3 +87,43 @@ GomGoods Backend
         │
         ▼
    PostgreSQL
+```
+
+## Phase 1 API
+
+Implemented endpoints use the `/api` prefix:
+
+- `GET /api/health`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+
+Registration and login return a 15-minute Bearer access token. Phase 1 intentionally has no refresh token, persistent session, or server-side logout endpoint.
+
+Successful responses use `{ "success": true, "data": ... }`. Errors use `{ "success": false, "error": { "code": "...", "message": "...", "details": [] } }`.
+
+## Local setup
+
+1. Install the lockfile dependencies with `npm ci`.
+2. Copy `.env.example` to `.env` and replace every placeholder.
+3. Start PostgreSQL with `docker compose -f docker-compose.dev.yml up -d`.
+4. Apply the committed migration with `npm run db:migrate:deploy`.
+5. Optionally seed local data with `npm run db:seed`.
+6. Start the API with `npm run start:dev`.
+
+`SEED_USER_PASSWORD` is shared by the three fixed local seed accounts and is hashed with Argon2 before storage. It is strictly a local-development credential and must never be reused in staging or production.
+
+Swagger is available at `/api/docs` when `SWAGGER_ENABLED=true`. Keep it disabled or protected in production.
+
+Authentication routes are limited in memory to five attempts per minute per tracker. A multi-instance production deployment must use a shared throttling store before launch.
+
+## Verification
+
+Use a separate PostgreSQL database whose name contains `test`. Copy `.env.test.example` to `.env.test`; `TEST_DATABASE_URL` must not equal `DATABASE_URL`. The e2e harness refuses cleanup unless these safeguards pass, and cleanup is limited to users created under the `@e2e.gomgoods.local` domain.
+
+```text
+npm run build
+npm run lint
+npm run test:unit
+npm run test:e2e
+```
