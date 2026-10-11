@@ -36,4 +36,4 @@ The database enforces static integrity constraints. The following rules depend o
 
 ## Seed contents
 
-"npm run db:seed" is idempotent and uses fixed development-only UUIDs. It creates three users, one store, product and personal listings, a collection, an order with two items and two shipments, a payment with failed/successful transaction attempts, an auction with bids, a dispute, campaign participation, forum data, conversation, report, and support ticket. The passwords are non-production placeholder strings and must never be used outside development.
+"npm run db:seed" is idempotent and uses fixed development-only UUIDs. It creates three users, one store, product and personal listings, a collection, an order with two items and two shipments, a payment with failed/successful transaction attempts, an auction with bids, a dispute, campaign participation, forum data, conversation, report, and support ticket. Seed user passwords are read from `SEED_USER_PASSWORD` and stored as Argon2 hashes. This credential is local-development-only and must never be reused in another environment.

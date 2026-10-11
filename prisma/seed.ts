@@ -1,6 +1,7 @@
 import "dotenv/config";
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import { argon2id, hash } from "argon2";
 
 import { PrismaClient } from "../src/generated/prisma/client.js";
 
@@ -40,34 +41,44 @@ const id = {
 };
 
 async function main() {
+  const developmentPassword = process.env.SEED_USER_PASSWORD;
+  if (!developmentPassword || developmentPassword.length < 12) {
+    throw new Error(
+      "SEED_USER_PASSWORD must contain at least 12 characters and is for local development only.",
+    );
+  }
+  const developmentPasswordHash = await hash(developmentPassword, {
+    type: argon2id,
+  });
+
   await prisma.user.upsert({
     where: { id: id.storeOwner },
-    update: { status: "ACTIVE" },
+    update: { status: "ACTIVE", passwordHash: developmentPasswordHash },
     create: {
       id: id.storeOwner,
       email: "store-owner@gomgoods.local",
       username: "otaku_store",
-      passwordHash: "seed-only-not-a-real-password",
+      passwordHash: developmentPasswordHash,
     },
   });
   await prisma.user.upsert({
     where: { id: id.personalSeller },
-    update: { status: "ACTIVE" },
+    update: { status: "ACTIVE", passwordHash: developmentPasswordHash },
     create: {
       id: id.personalSeller,
       email: "seller@gomgoods.local",
       username: "minh_collects",
-      passwordHash: "seed-only-not-a-real-password",
+      passwordHash: developmentPasswordHash,
     },
   });
   await prisma.user.upsert({
     where: { id: id.buyer },
-    update: { status: "ACTIVE" },
+    update: { status: "ACTIVE", passwordHash: developmentPasswordHash },
     create: {
       id: id.buyer,
       email: "buyer@gomgoods.local",
       username: "anime_buyer",
-      passwordHash: "seed-only-not-a-real-password",
+      passwordHash: developmentPasswordHash,
     },
   });
 

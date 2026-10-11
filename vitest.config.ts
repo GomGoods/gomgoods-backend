@@ -8,6 +8,11 @@ export default defineConfig({
   test: {
     globals: true,
     root: './',
-    include: ['**/*.spec.ts'],
+    environment: 'node',
+    include: ['src/**/*.spec.ts'],
+    exclude: ['src/generated/**', 'test/**'],
+    coverage: {
+      exclude: ['src/generated/**'],
+    },
   },
 });
