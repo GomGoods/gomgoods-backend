@@ -98,7 +98,17 @@ Implemented endpoints use the `/api` prefix:
 - `POST /api/auth/login`
 - `GET /api/auth/me`
 
-Registration and login return a 15-minute Bearer access token. Phase 1 intentionally has no refresh token, persistent session, or server-side logout endpoint.
+Registration and login return a 15-minute session-bound Bearer access token and set an opaque refresh credential in an HttpOnly cookie. Refresh credentials have a fixed 30-day lifetime and rotate on every successful refresh.
+
+Phase 2 adds:
+
+- `POST /api/auth/refresh`
+- `POST /api/auth/logout`
+- `POST /api/auth/logout-all`
+
+All authentication POST requests require an exact configured `Origin` and `X-GomGoods-CSRF: 1`. Browser clients must use credentialed requests. Access tokens belong in memory and the `Authorization` header; the refresh credential is never returned in JSON or stored by frontend JavaScript.
+
+Refresh rotation permits exactly one successful use. A duplicate received within 10 seconds returns `409 REFRESH_ALREADY_ROTATED` without clearing the cookie or revoking the session. Reuse after 10 seconds is treated as replay and revokes only that session family. This grace window cannot distinguish a delayed legitimate request from an attacker: an attacker inside the window receives no token, while a legitimate request delayed beyond it can revoke the session and require login. If the successful rotation response is lost before its cookie is stored, the client must authenticate again.
 
 Successful responses use `{ "success": true, "data": ... }`. Errors use `{ "success": false, "error": { "code": "...", "message": "...", "details": [] } }`.
 
@@ -115,7 +125,11 @@ Successful responses use `{ "success": true, "data": ... }`. Errors use `{ "succ
 
 Swagger is available at `/api/docs` when `SWAGGER_ENABLED=true`. Keep it disabled or protected in production.
 
-Authentication routes are limited in memory to five attempts per minute per tracker. A multi-instance production deployment must use a shared throttling store before launch.
+Refresh-cookie settings are deployment-specific. Production must explicitly set `AUTH_COOKIE_SECURE=true` and choose `AUTH_COOKIE_SAME_SITE` based on the real frontend/API topology. Use `lax` or `strict` only for same-site deployments; a genuinely cross-site deployment requires `none` with HTTPS. `AUTH_COOKIE_DOMAIN` is optional and omitted for a host-only cookie. CORS never permits wildcard origins with credentials.
+
+The current frontend mock authentication is not integrated by this backend phase. Frontend integration must separately add `credentials: "include"`, the CSRF header, in-memory access-token handling, and single-flight refresh behavior.
+
+Registration and login are limited in memory to five attempts per minute per tracker; refresh allows 30 attempts per minute, and logout routes retain the global limit. A multi-instance production deployment must use a shared throttling store before launch.
 
 ## Verification
 

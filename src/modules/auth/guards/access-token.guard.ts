@@ -38,9 +38,12 @@ export class AccessTokenGuard implements CanActivate {
       );
     }
 
-    let subject: string;
+    let payload: { sub: string; sid: string };
     try {
-      subject = (await this.tokens.verify(token)).sub;
+      payload = await this.tokens.verify(token);
+      if (typeof payload.sub !== 'string' || typeof payload.sid !== 'string') {
+        throw new Error('Invalid access-token claims');
+      }
     } catch (error) {
       const expired =
         error instanceof Error && error.name === 'TokenExpiredError';
@@ -53,7 +56,10 @@ export class AccessTokenGuard implements CanActivate {
       );
     }
 
-    const user = await this.users.findSafeById(subject);
+    const user = await this.users.findSafeByIdForSession(
+      payload.sub,
+      payload.sid,
+    );
     if (!user) {
       throw new ApiException(
         'INVALID_ACCESS_TOKEN',

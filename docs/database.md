@@ -24,6 +24,8 @@ Useful checks:
 - Review belongs to exactly one OrderItem, so one purchased item can receive at most one review. Both product and seller ratings are optional individually, but at least one rating is required and any supplied rating must be from 1 to 5.
 - Join tables enforce the ERD's duplicate rules: Follow, CollectionItem, CampaignParticipant, ConversationParticipant, Reaction, ListingImage, and ShipmentItem have composite unique constraints.
 - Report.target_id is deliberately a polymorphic uuid: its FK depends on target_type and therefore cannot be represented as one relational FK. The service that creates a report must validate that the target exists and matches its type.
+- AuthSession is a user's server-side authentication family. Its fixed expires_at value is never extended by refresh. current_generation is advanced atomically, and revoked_at plus revocation_reason invalidate every access and refresh credential in that family.
+- RefreshCredential stores only a SHA-256 digest of a 256-bit random secret. Its composite key records every generation so reuse can be distinguished from the current credential without storing raw refresh tokens. Deleting an AuthSession cascades to its credential history.
 
 ## Rules enforced by service transactions
 
@@ -37,3 +39,7 @@ The database enforces static integrity constraints. The following rules depend o
 ## Seed contents
 
 "npm run db:seed" is idempotent and uses fixed development-only UUIDs. It creates three users, one store, product and personal listings, a collection, an order with two items and two shipments, a payment with failed/successful transaction attempts, an auction with bids, a dispute, campaign participation, forum data, conversation, report, and support ticket. Seed user passwords are read from `SEED_USER_PASSWORD` and stored as Argon2 hashes. This credential is local-development-only and must never be reused in another environment.
+
+## Authentication-session retention
+
+Expired and revoked sessions are rejected by application queries immediately. Phase 2 intentionally does not add a scheduler or external cleanup service. Session rows and their credential history remain available for security investigation until a separately approved maintenance job removes records past an operational retention cutoff.

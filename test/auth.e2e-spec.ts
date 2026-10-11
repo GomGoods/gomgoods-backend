@@ -5,6 +5,15 @@ import { UserStatus } from '../src/generated/prisma/enums.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { cleanE2eUsers, createTestApp } from './helpers/create-test-app.js';
 
+const testOrigin = 'http://localhost:3001';
+
+function authPost(app: INestApplication, path: string) {
+  return request(app.getHttpServer())
+    .post(path)
+    .set('Origin', testOrigin)
+    .set('X-GomGoods-CSRF', '1');
+}
+
 describe('Phase 1 API (e2e)', () => {
   let app: INestApplication;
   let accessToken: string;
@@ -37,8 +46,7 @@ describe('Phase 1 API (e2e)', () => {
   });
 
   it('rejects an invalid registration body with the standard envelope', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/auth/register')
+    const response = await authPost(app, '/api/auth/register')
       .send({ email: 'not-an-email', username: 'x', password: 'short' })
       .expect(422);
     expect(response.body).toMatchObject({
@@ -48,8 +56,7 @@ describe('Phase 1 API (e2e)', () => {
   });
 
   it('registers a user and automatically issues a 15-minute access token', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/auth/register')
+    const response = await authPost(app, '/api/auth/register')
       .send(user)
       .expect(201);
     expect(response.body).toMatchObject({
@@ -69,24 +76,21 @@ describe('Phase 1 API (e2e)', () => {
   });
 
   it('returns a conflict for a duplicate email', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/auth/register')
+    const response = await authPost(app, '/api/auth/register')
       .send({ ...user, username: 'another_name' })
       .expect(409);
     expect(response.body.error.code).toBe('EMAIL_ALREADY_EXISTS');
   });
 
   it('returns a conflict for a duplicate username', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/auth/register')
+    const response = await authPost(app, '/api/auth/register')
       .send({ ...user, email: 'another@e2e.gomgoods.local' })
       .expect(409);
     expect(response.body.error.code).toBe('USERNAME_ALREADY_EXISTS');
   });
 
   it('returns a generic error for invalid login credentials', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/auth/login')
+    const response = await authPost(app, '/api/auth/login')
       .send({ email: user.email, password: 'incorrect-password' })
       .expect(401);
     expect(response.body.error).toMatchObject({
@@ -96,8 +100,7 @@ describe('Phase 1 API (e2e)', () => {
   });
 
   it('logs in with email and password', async () => {
-    const response = await request(app.getHttpServer())
-      .post('/api/auth/login')
+    const response = await authPost(app, '/api/auth/login')
       .send({ email: user.email.toUpperCase(), password: user.password })
       .expect(200);
     expect(response.body.data.expiresIn).toBe(900);
@@ -158,8 +161,7 @@ describe('Phase 1 API (e2e)', () => {
   it('rate limits repeated login attempts', async () => {
     let response: request.Response | undefined;
     for (let attempt = 0; attempt < 6; attempt += 1) {
-      response = await request(app.getHttpServer())
-        .post('/api/auth/login')
+      response = await authPost(app, '/api/auth/login')
         .send({
           email: 'rate-limit-missing@e2e.gomgoods.local',
           password: 'incorrect-password',

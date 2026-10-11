@@ -16,12 +16,17 @@ interface CreateUserInput {
   passwordHash: string;
 }
 
+type UserDatabase = Pick<Prisma.TransactionClient, 'user'>;
+
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(input: CreateUserInput): Promise<SafeUser> {
-    const duplicate = await this.prisma.user.findFirst({
+  async create(
+    input: CreateUserInput,
+    database: UserDatabase = this.prisma,
+  ): Promise<SafeUser> {
+    const duplicate = await database.user.findFirst({
       where: {
         OR: [{ email: input.email }, { username: input.username }],
       },
@@ -43,7 +48,7 @@ export class UsersService {
     }
 
     try {
-      return await this.prisma.user.create({
+      return await database.user.create({
         data: input,
         select: safeUserSelect,
       });
@@ -84,6 +89,25 @@ export class UsersService {
   findSafeById(id: string): Promise<SafeUser | null> {
     return this.prisma.user.findUnique({
       where: { id },
+      select: safeUserSelect,
+    });
+  }
+
+  findSafeByIdForSession(
+    id: string,
+    sessionId: string,
+  ): Promise<SafeUser | null> {
+    return this.prisma.user.findFirst({
+      where: {
+        id,
+        authSessions: {
+          some: {
+            id: sessionId,
+            revokedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+        },
+      },
       select: safeUserSelect,
     });
   }
