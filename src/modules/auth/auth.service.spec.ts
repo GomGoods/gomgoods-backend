@@ -28,11 +28,30 @@ function createService() {
       expiresIn: 900,
     }),
   };
+  const sessions = {
+    start: vi.fn().mockResolvedValue({
+      sessionId: '00000000-0000-4000-8000-000000000099',
+      refreshToken: 'refresh-token',
+      expiresAt: new Date('2026-02-01T00:00:00.000Z'),
+    }),
+    rotate: vi.fn(),
+    revokeCurrent: vi.fn(),
+    revokeAll: vi.fn(),
+  };
+  const prisma = {
+    $transaction: vi.fn(async (callback) => callback({})),
+  };
 
   return {
-    service: new AuthService(users as never, tokens as never),
+    service: new AuthService(
+      users as never,
+      tokens as never,
+      sessions as never,
+      prisma as never,
+    ),
     users,
     tokens,
+    sessions,
   };
 }
 
@@ -55,14 +74,16 @@ describe('AuthService', () => {
         email: 'user@gomgoods.local',
         passwordHash: expect.not.stringContaining('correct-horse-battery'),
       }),
+      expect.anything(),
     );
     const createInput = users.create.mock.calls[0][0];
     expect(createInput.passwordHash).toMatch(/^\$argon2id\$/);
     await expect(
       verify(createInput.passwordHash, 'correct-horse-battery'),
     ).resolves.toBe(true);
-    expect(result).toMatchObject({ accessToken: 'signed-token' });
-    expect(result.user).not.toHaveProperty('passwordHash');
+    expect(result.publicResult).toMatchObject({ accessToken: 'signed-token' });
+    expect(result.publicResult.user).not.toHaveProperty('passwordHash');
+    expect(result.publicResult).not.toHaveProperty('refreshGrant');
   });
 
   it('returns one generic authentication failure for an unknown email', async () => {

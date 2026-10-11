@@ -6,6 +6,7 @@ import type { AccountType } from '../../generated/prisma/enums.js';
 
 export interface AccessTokenPayload {
   sub: string;
+  sid: string;
   accountType: AccountType;
 }
 

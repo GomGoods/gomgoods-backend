@@ -25,7 +25,8 @@ export function configureApp(app: INestApplication): void {
   app.setGlobalPrefix('api');
   app.enableCors({
     origin: config.getOrThrow<string[]>('CORS_ORIGINS'),
-    credentials: false,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-GomGoods-CSRF'],
   });
   app.useGlobalPipes(
     new ValidationPipe({
@@ -49,6 +50,7 @@ export function configureApp(app: INestApplication): void {
       .setDescription('GomGoods C2C marketplace backend API')
       .setVersion('1.0')
       .addBearerAuth()
+      .addCookieAuth('gomgoods_refresh')
       .build();
     SwaggerModule.setup(
       'api/docs',
