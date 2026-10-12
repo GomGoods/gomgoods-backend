@@ -148,3 +148,4 @@ vite.config.ts.timestamp-*
 .claude/
 .windsurf/
 skills-lock.json
+/agent
