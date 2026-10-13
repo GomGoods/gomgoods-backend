@@ -188,6 +188,8 @@ model User {
   addresses                 Address[]
   store                     Store?
   following                 Follow[]
+  followingUsers            UserFollow[]              @relation("UserFollowing")
+  followers                 UserFollow[]              @relation("UserFollowers")
   listings                  Listing[]                 @relation("PersonalListings")
   collections               Collection[]
   orders                    Order[]
@@ -291,6 +293,20 @@ model Follow {
   @@unique([userId, storeId])
   @@index([storeId])
   @@map("FOLLOW")
+}
+
+model UserFollow {
+  followerId  String   @map("follower_id") @db.Uuid
+  followingId String   @map("following_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+  @@index([followerId, createdAt])
+  @@map("USER_FOLLOW")
 }
 
 model Category {

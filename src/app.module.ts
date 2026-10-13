@@ -10,6 +10,8 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { AccessTokenGuard } from './modules/auth/guards/access-token.guard.js';
 import { AccountTypeGuard } from './modules/auth/guards/account-type.guard.js';
 import { CategoriesModule } from './modules/categories/categories.module.js';
+import { DiscoveryModule } from './modules/discovery/discovery.module.js';
+import { FollowsModule } from './modules/follows/follows.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { ListingsModule } from './modules/listings/listings.module.js';
 import { ProductsModule } from './modules/products/products.module.js';
@@ -35,6 +37,8 @@ import { PrismaModule } from './prisma/prisma.module.js';
     UsersModule,
     StoresModule,
     CategoriesModule,
+    DiscoveryModule,
+    FollowsModule,
     ProductsModule,
     ListingsModule,
   ],
