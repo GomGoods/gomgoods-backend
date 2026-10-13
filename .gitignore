@@ -149,3 +149,4 @@ vite.config.ts.timestamp-*
 .windsurf/
 skills-lock.json
 /agent
+/PROJECT_RULES.md
