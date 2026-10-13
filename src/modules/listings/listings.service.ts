@@ -6,11 +6,9 @@ import {
 } from '../../common/dto/pagination.dto.js';
 import { ApiException } from '../../common/exceptions/api.exception.js';
 import {
-  CategoryStatus,
   ListingStatus,
   ProductStatus,
   StoreStatus,
-  UserStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { SafeUser } from '../users/user.select.js';
@@ -19,6 +17,7 @@ import type { ListingQueryDto } from './dto/listing-query.dto.js';
 import type { UpdateListingStatusDto } from './dto/update-listing-status.dto.js';
 import type { UpdateListingDto } from './dto/update-listing.dto.js';
 import { listingSelect, type ListingResponse } from './listing.select.js';
+import { listingOrderBy, publicListingWhere } from './public-listing-query.js';
 
 @Injectable()
 export class ListingsService {
@@ -33,7 +32,7 @@ export class ListingsService {
     const [items, total] = await this.prisma.$transaction([
       this.prisma.listing.findMany({
         where,
-        orderBy: { createdAt: 'desc' },
+        orderBy: listingOrderBy(query.sort),
         skip,
         take,
         select: listingSelect,
@@ -134,39 +133,7 @@ export class ListingsService {
   }
 
   private publicWhere(query: ListingQueryDto & { id?: string }) {
-    return {
-      ...(query.id ? { id: query.id } : {}),
-      status: ListingStatus.ACTIVE,
-      ...(query.condition ? { condition: query.condition } : {}),
-      ...(query.productId ? { productId: query.productId } : {}),
-      ...(query.sellerUserId ? { sellerUserId: query.sellerUserId } : {}),
-      ...(query.minPrice || query.maxPrice
-        ? {
-            price: {
-              ...(query.minPrice ? { gte: query.minPrice } : {}),
-              ...(query.maxPrice ? { lte: query.maxPrice } : {}),
-            },
-          }
-        : {}),
-      ...(query.sellerType === 'personal'
-        ? { sellerUserId: { not: null } }
-        : {}),
-      ...(query.sellerType === 'store' ? { productId: { not: null } } : {}),
-      OR: [
-        {
-          product: {
-            status: ProductStatus.ACTIVE,
-            category: { status: CategoryStatus.ACTIVE },
-            store: { status: StoreStatus.ACTIVE },
-          },
-        },
-        {
-          sellerUser: {
-            status: UserStatus.ACTIVE,
-          },
-        },
-      ],
-    };
+    return publicListingWhere(query);
   }
 
   private async requireOwnedListing(id: string, userId: string) {
