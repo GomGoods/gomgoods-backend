@@ -1,0 +1,27 @@
+name: gomgoods-backend-e2e
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${GOMGOODS_TEST_POSTGRES_DB:-gomgoods_test}
+      POSTGRES_USER: ${GOMGOODS_TEST_POSTGRES_USER:?Set GOMGOODS_TEST_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${GOMGOODS_TEST_POSTGRES_PASSWORD:?Set GOMGOODS_TEST_POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - gomgoods_e2e_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  gomgoods_e2e_postgres_data:
+    name: gomgoods-backend-e2e_postgres_data
