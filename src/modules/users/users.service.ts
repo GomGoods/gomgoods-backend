@@ -5,10 +5,13 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import {
   authUserSelect,
+  publicUserSelect,
   safeUserSelect,
   type AuthUser,
+  type PublicUser,
   type SafeUser,
 } from './user.select.js';
+import type { UpdateCurrentUserDto } from './dto/update-current-user.dto.js';
 
 interface CreateUserInput {
   email: string;
@@ -91,6 +94,60 @@ export class UsersService {
       where: { id },
       select: safeUserSelect,
     });
+  }
+
+  async updateCurrentUser(
+    id: string,
+    input: UpdateCurrentUserDto,
+  ): Promise<SafeUser> {
+    if (!input.username) {
+      const user = await this.findSafeById(id);
+      if (!user) {
+        throw new ApiException(
+          'RESOURCE_NOT_FOUND',
+          'User not found',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+      return user;
+    }
+    try {
+      return await this.prisma.user.update({
+        where: { id },
+        data: { username: input.username },
+        select: safeUserSelect,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ApiException(
+          'USERNAME_ALREADY_EXISTS',
+          'An account with this username already exists',
+          HttpStatus.CONFLICT,
+        );
+      }
+      throw error;
+    }
+  }
+
+  async findPublicProfile(id: string): Promise<PublicUser> {
+    const user = await this.prisma.user.findFirst({
+      where: { id, status: 'ACTIVE' },
+      select: publicUserSelect,
+    });
+    if (!user) {
+      throw new ApiException(
+        'RESOURCE_NOT_FOUND',
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+    return {
+      ...user,
+      store: user.store?.status === 'ACTIVE' ? user.store : null,
+    };
   }
 
   findSafeByIdForSession(

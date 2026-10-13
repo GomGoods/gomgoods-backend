@@ -27,4 +27,27 @@ describe('UsersService', () => {
       }),
     ).rejects.toMatchObject({ code: 'EMAIL_ALREADY_EXISTS', status: 409 });
   });
+
+  it('hides non-active stores from public profiles', async () => {
+    const prisma = {
+      user: {
+        findFirst: vi.fn().mockResolvedValue({
+          id: '00000000-0000-4000-8000-000000000001',
+          username: 'owner',
+          createdAt: new Date(),
+          store: {
+            id: '00000000-0000-4000-8000-000000000020',
+            name: 'Pending Store',
+            avatarUrl: null,
+            status: 'PENDING',
+          },
+        }),
+      },
+    };
+    const service = new UsersService(prisma as never);
+
+    await expect(
+      service.findPublicProfile('00000000-0000-4000-8000-000000000001'),
+    ).resolves.toMatchObject({ username: 'owner', store: null });
+  });
 });
