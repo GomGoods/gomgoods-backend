@@ -5,6 +5,7 @@ import {
   ProductStatus,
   StoreStatus,
 } from '../../generated/prisma/enums.js';
+import { ProductQueryDto } from './dto/product-query.dto.js';
 import { ProductsService } from './products.service.js';
 
 const safeUser = {
@@ -53,7 +54,7 @@ describe('ProductsService', () => {
     };
     const service = new ProductsService(prisma as never, {} as never);
 
-    await expect(service.findAll({})).resolves.toMatchObject({
+    await expect(service.findAll(new ProductQueryDto())).resolves.toMatchObject({
       items: [],
       meta: { total: 0 },
     });

@@ -190,9 +190,12 @@ model User {
   following                 Follow[]
   followingUsers            UserFollow[]              @relation("UserFollowing")
   followers                 UserFollow[]              @relation("UserFollowers")
+  cart                      Cart?
+  checkoutGroups            CheckoutGroup[]
   listings                  Listing[]                 @relation("PersonalListings")
   collections               Collection[]
   orders                    Order[]
+  sellerOrders              Order[]                   @relation("OrderSellerUser")
   shipmentSellerAssignments Shipment[]                @relation("ShipmentSellerUser")
   auctionWins               Auction[]                 @relation("AuctionWinner")
   bids                      Bid[]
@@ -275,6 +278,7 @@ model Store {
   user      User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   products  Product[]
   followers Follow[]
+  orders    Order[]    @relation("OrderStore")
   shipments Shipment[] @relation("ShipmentStore")
 
   @@index([status])
@@ -362,6 +366,7 @@ model Listing {
   sellerUser      User?            @relation("PersonalListings", fields: [sellerUserId], references: [id], onDelete: Restrict)
   images          ListingImage[]
   collectionItems CollectionItem[]
+  cartItems       CartItem[]
   orderItems      OrderItem[]
   auction         Auction?
 
@@ -369,6 +374,34 @@ model Listing {
   @@index([sellerUserId, status])
   @@index([status, createdAt])
   @@map("LISTING")
+}
+
+model Cart {
+  id        String     @id @default(uuid()) @map("cart_id") @db.Uuid
+  userId    String     @unique @map("user_id") @db.Uuid
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@map("CART")
+}
+
+model CartItem {
+  id        String   @id @default(uuid()) @map("cart_item_id") @db.Uuid
+  cartId    String   @map("cart_id") @db.Uuid
+  listingId String   @map("listing_id") @db.Uuid
+  quantity  Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+
+  @@unique([cartId, listingId])
+  @@index([listingId])
+  @@map("CART_ITEM")
 }
 
 model ListingImage {
@@ -413,34 +446,59 @@ model CollectionItem {
 }
 
 model Order {
-  id        String      @id @default(uuid()) @map("order_id") @db.Uuid
-  userId    String      @map("user_id") @db.Uuid
-  addressId String      @map("address_id") @db.Uuid
-  total     Decimal     @map("total_amount") @db.Decimal(14, 2)
-  status    OrderStatus @default(PENDING)
-  note      String?     @db.Text
-  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String      @id @default(uuid()) @map("order_id") @db.Uuid
+  checkoutGroupId     String?     @map("checkout_group_id") @db.Uuid
+  userId              String      @map("user_id") @db.Uuid
+  addressId           String      @map("address_id") @db.Uuid
+  sellerUserId        String?     @map("seller_user_id") @db.Uuid
+  storeId             String?     @map("store_id") @db.Uuid
+  total               Decimal     @map("total_amount") @db.Decimal(14, 2)
+  paymentMethod       PaymentMethod @default(BANK_TRANSFER) @map("payment_method")
+  status              OrderStatus @default(PENDING)
+  note                String?     @db.Text
+  expiresAt           DateTime?   @map("expires_at") @db.Timestamptz(6)
+  cancelledAt         DateTime?   @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason        String?     @map("cancel_reason") @db.Text
+  shippingRecipient   String      @default("") @map("shipping_recipient") @db.VarChar(150)
+  shippingPhone       String      @default("") @map("shipping_phone") @db.VarChar(30)
+  shippingAddressLine String      @default("") @map("shipping_address_line") @db.VarChar(255)
+  shippingCity        String      @default("") @map("shipping_city") @db.VarChar(100)
+  shippingDistrict    String      @default("") @map("shipping_district") @db.VarChar(100)
+  shippingWard        String      @default("") @map("shipping_ward") @db.VarChar(100)
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user      User        @relation(fields: [userId], references: [id], onDelete: Restrict)
-  address   Address     @relation(fields: [addressId], references: [id], onDelete: Restrict)
-  items     OrderItem[]
-  payments  Payment[]
-  shipments Shipment[]
-  disputes  Dispute[]
+  checkoutGroup CheckoutGroup? @relation(fields: [checkoutGroupId], references: [id], onDelete: Restrict)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  address       Address        @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  sellerUser    User?          @relation("OrderSellerUser", fields: [sellerUserId], references: [id], onDelete: Restrict)
+  store         Store?         @relation("OrderStore", fields: [storeId], references: [id], onDelete: Restrict)
+  items         OrderItem[]
+  payments      Payment[]
+  shipments     Shipment[]
+  disputes      Dispute[]
 
   @@index([userId, createdAt])
+  @@index([checkoutGroupId])
+  @@index([sellerUserId, createdAt])
+  @@index([storeId, createdAt])
+  @@index([status, expiresAt])
   @@index([status, createdAt])
   @@map("ORDER")
 }
 
 model OrderItem {
-  id        String  @id @default(uuid()) @map("order_item_id") @db.Uuid
-  orderId   String  @map("order_id") @db.Uuid
-  listingId String  @map("listing_id") @db.Uuid
-  quantity  Int
-  unitPrice Decimal @map("unit_price") @db.Decimal(14, 2)
-  subtotal  Decimal @db.Decimal(14, 2)
+  id                         String   @id @default(uuid()) @map("order_item_id") @db.Uuid
+  orderId                    String   @map("order_id") @db.Uuid
+  listingId                  String   @map("listing_id") @db.Uuid
+  quantity                   Int
+  unitPrice                  Decimal  @map("unit_price") @db.Decimal(14, 2)
+  subtotal                   Decimal  @db.Decimal(14, 2)
+  listingDescriptionSnapshot String?  @map("listing_description_snapshot") @db.Text
+  productIdSnapshot          String?  @map("product_id_snapshot") @db.Uuid
+  productNameSnapshot        String?  @map("product_name_snapshot") @db.VarChar(200)
+  storeNameSnapshot          String?  @map("store_name_snapshot") @db.VarChar(150)
+  sellerUsernameSnapshot     String?  @map("seller_username_snapshot") @db.VarChar(50)
 
   order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   listing       Listing        @relation(fields: [listingId], references: [id], onDelete: Restrict)
@@ -450,6 +508,22 @@ model OrderItem {
 
   @@index([listingId])
   @@map("ORDER_ITEM")
+}
+
+model CheckoutGroup {
+  id             String   @id @default(uuid()) @map("checkout_group_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(120)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  total          Decimal  @map("total_amount") @db.Decimal(14, 2)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  orders Order[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@map("CHECKOUT_GROUP")
 }
 
 model Payment {
