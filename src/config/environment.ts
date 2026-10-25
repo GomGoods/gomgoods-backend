@@ -1,7 +1,12 @@
+import {
+  validatePaymentEnvironment,
+  type PaymentEnvironment,
+} from './payments.environment.js';
+
 export type NodeEnvironment = 'development' | 'test' | 'production';
 export type CookieSameSite = 'strict' | 'lax' | 'none';
 
-export interface AppEnvironment {
+export interface AppEnvironment extends PaymentEnvironment {
   NODE_ENV: NodeEnvironment;
   PORT: number;
   DATABASE_URL: string;
@@ -200,6 +205,11 @@ export function validateEnvironment(
   }
 
   return {
+    ...validatePaymentEnvironment(
+      environment,
+      nodeEnvironment,
+      nodeEnvironment === 'test' ? testDatabaseUrl! : applicationDatabaseUrl,
+    ),
     NODE_ENV: nodeEnvironment,
     PORT: port,
     DATABASE_URL:

@@ -22,6 +22,7 @@ import {
 } from '../src/modules/users/user.select.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 import { createTestApp } from './helpers/create-test-app.js';
+import { fixtureOrders } from './helpers/fixture-orders.js';
 
 describe('Phase 5 PostgreSQL concurrency regressions', () => {
   let app: INestApplication;
@@ -45,7 +46,7 @@ describe('Phase 5 PostgreSQL concurrency regressions', () => {
     prisma = app.get(PrismaService);
     carts = app.get(CartService);
     checkout = app.get(CheckoutService);
-    orders = app.get(OrdersService);
+    orders = fixtureOrders(prisma, { userId: { in: userIds } });
     shipments = app.get(ShipmentsService);
     await prisma.user.createMany({
       data: userIds.map((id) => ({

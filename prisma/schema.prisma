@@ -538,9 +538,49 @@ model Payment {
 
   order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+  events       PaymentEvent[]
 
   @@index([orderId, status])
   @@map("PAYMENT")
+}
+
+enum PaymentEventProvider {
+  MOCK
+  SEPAY_TEST
+}
+
+enum PaymentEventStatus {
+  RECEIVED
+  APPLIED
+  REJECTED
+  IGNORED
+}
+
+model PaymentEvent {
+  id               String               @id @default(uuid()) @map("payment_event_id") @db.Uuid
+  provider         PaymentEventProvider
+  providerEventId  String               @map("provider_event_id") @db.VarChar(120)
+  bankReference    String?              @map("bank_reference") @db.VarChar(150)
+  payloadHash      String               @map("payload_hash") @db.Char(64)
+  accountNumber    String               @map("account_number") @db.VarChar(30)
+  gateway          String               @db.VarChar(100)
+  paymentReference String?              @map("payment_reference") @db.VarChar(50)
+  amount           Decimal              @db.Decimal(14, 2)
+  transferType     String               @map("transfer_type") @db.VarChar(3)
+  occurredAt       DateTime             @map("occurred_at") @db.Timestamptz(6)
+  status           PaymentEventStatus   @default(RECEIVED)
+  reason           String?              @db.VarChar(100)
+  paymentId        String?              @map("payment_id") @db.Uuid
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerEventId])
+  @@unique([provider, accountNumber, gateway, bankReference], map: "PAYMENT_EVENT_bank_reference_key")
+  @@index([status, createdAt])
+  @@index([paymentId])
+  @@map("PAYMENT_EVENT")
 }
 
 model Transaction {
