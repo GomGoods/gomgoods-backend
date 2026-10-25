@@ -26,6 +26,7 @@
     "db:migrate:dev": "prisma migrate dev --config prisma7.config.ts",
     "db:migrate:deploy": "prisma migrate deploy --config prisma7.config.ts",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:categories": "tsx prisma/seed-categories.ts",
     "db:studio": "prisma studio --config prisma7.config.ts",
     "postinstall": "npm run prisma:generate"
   },
