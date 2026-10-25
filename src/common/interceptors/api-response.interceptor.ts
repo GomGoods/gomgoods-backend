@@ -9,6 +9,7 @@ import { map, type Observable } from 'rxjs';
 @Injectable()
 export class ApiResponseInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    if (context.getType() !== 'http') return next.handle();
     const statusCode = context.switchToHttp().getResponse().statusCode;
     if (statusCode === 204) {
       return next.handle();

@@ -7,6 +7,7 @@ import { AccountTypeGuard } from './account-type.guard.js';
 
 function contextFor(accountType: AccountType): ExecutionContext {
   return {
+    getType: () => 'http',
     getHandler: vi.fn(),
     getClass: vi.fn(),
     switchToHttp: () => ({

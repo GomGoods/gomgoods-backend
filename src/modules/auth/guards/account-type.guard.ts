@@ -17,6 +17,7 @@ export class AccountTypeGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
+    if (context.getType() !== 'http') return true;
     const allowed = this.reflector.getAllAndOverride<AccountType[]>(
       ACCOUNT_TYPES_KEY,
       [context.getHandler(), context.getClass()],

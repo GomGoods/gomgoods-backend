@@ -373,28 +373,31 @@ async function main() {
     update: { type: "LIKE" },
     create: { postId: id.post, userId: id.storeOwner, type: "LIKE" },
   });
-  await prisma.conversation.upsert({
-    where: { id: id.conversation },
-    update: {},
-    create: { id: id.conversation },
-  });
-  for (const userId of [id.buyer, id.personalSeller]) {
-    await prisma.conversationParticipant.upsert({
-      where: { conversationId_userId: { conversationId: id.conversation, userId } },
-      update: {},
-      create: { conversationId: id.conversation, userId },
-    });
-  }
-  await prisma.message.upsert({
-    where: { id: "00000000-0000-4000-8000-000000000141" },
-    update: { status: "READ" },
-    create: {
+  // Chat fixture must satisfy Phase 7A membership/sequence constraints atomically.
+  // Preserve existing history on subsequent seed runs. This seed is not run by E2E.
+  await prisma.$transaction(async (tx) => {
+    if (await tx.conversation.findUnique({ where: { id: id.conversation } })) return;
+    const listing = await tx.listing.findUniqueOrThrow({ where: { id: id.personalListing } });
+    const seller = await tx.user.findUniqueOrThrow({ where: { id: id.personalSeller } });
+    await tx.conversation.create({ data: {
+      id: id.conversation, buyerId: id.buyer, sellerUserId: id.personalSeller,
+      listingId: id.personalListing, lastSequence: 1,
+      contextSnapshot: {
+        listingId: listing.id, description: listing.description, price: listing.price.toFixed(2), condition: listing.condition,
+        productName: null, sellerUserId: seller.id, sellerUsername: seller.username,
+        storeId: null, storeName: null, storeAvatarUrl: null,
+      },
+      participants: { create: [
+        { userId: id.buyer },
+        { userId: id.personalSeller, lastDeliveredSequence: 1, lastReadSequence: 1 },
+      ] },
+    } });
+    await tx.message.create({ data: {
       id: "00000000-0000-4000-8000-000000000141",
-      conversationId: id.conversation,
-      senderId: id.buyer,
-      content: "Hi, when can you ship my order?",
-      status: "READ",
-    },
+      clientMessageId: "00000000-0000-4000-8000-000000000141",
+      conversationId: id.conversation, senderId: id.buyer, sequence: 1,
+      content: "Hi, when can you ship my order?", status: "READ",
+    } });
   });
   await prisma.report.upsert({
     where: { id: "00000000-0000-4000-8000-000000000150" },

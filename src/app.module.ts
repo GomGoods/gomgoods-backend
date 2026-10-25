@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { HttpThrottlerGuard } from './common/guards/http-throttler.guard.js';
+import { ChatModule } from './modules/chat/chat.module.js';
 
 import { ApiExceptionFilter } from './common/filters/api-exception.filter.js';
 import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor.js';
@@ -48,12 +50,13 @@ import { PrismaModule } from './prisma/prisma.module.js';
     FollowsModule,
     OrdersModule,
     PaymentsModule,
+    ChatModule,
     ShipmentsModule,
     ProductsModule,
     ListingsModule,
   ],
   providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: HttpThrottlerGuard },
     { provide: APP_GUARD, useExisting: AccessTokenGuard },
     { provide: APP_GUARD, useExisting: AccountTypeGuard },
     { provide: APP_INTERCEPTOR, useClass: ApiResponseInterceptor },
