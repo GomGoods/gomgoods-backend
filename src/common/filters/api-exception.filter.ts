@@ -18,6 +18,7 @@ const statusCodes: Partial<Record<number, ApiErrorCode>> = {
   403: 'FORBIDDEN',
   404: 'RESOURCE_NOT_FOUND',
   409: 'RESOURCE_CONFLICT',
+  413: 'BAD_REQUEST',
   422: 'VALIDATION_FAILED',
   429: 'RATE_LIMIT_EXCEEDED',
   503: 'SERVICE_UNAVAILABLE',
@@ -53,6 +54,13 @@ export class ApiExceptionFilter implements ExceptionFilter {
         message: exception.message,
         details: exception.details,
       };
+    }
+
+    // Body-parser runs before route filters. Preserve controlled client status
+    // without logging/returning a parser stack or any submitted body fragments.
+    if (exception instanceof Error && 'type' in exception && 'status' in exception &&
+      ((exception.type === 'entity.too.large' && exception.status === 413) || (exception.type === 'entity.parse.failed' && exception.status === 400))) {
+      return { status: exception.status, code: 'BAD_REQUEST', message: exception.status === 413 ? 'Request payload is too large' : 'Invalid JSON request body', details: [] };
     }
 
     if (exception instanceof Prisma.PrismaClientKnownRequestError) {

@@ -1,15 +1,25 @@
+import { Test } from '@nestjs/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { ForumRateLimit } from './forum-rate-limit.js';
+import { PrismaService } from '../../prisma/prisma.service.js';
+import { ForumRateLimit, ForumRateLimitError, forumLimits } from './forum-rate-limit.js';
 
-describe('Forum per-user spam budget', () => {
-  it('shares budgets across sessions, separates actors and expires the window', () => {
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(100000);
-    const limits = new ForumRateLimit();
-    for (let i = 0; i < 5; i++) limits.consume('a', 'post');
-    expect(() => limits.consume('a', 'post')).toThrow('Forum rate limit');
-    expect(() => limits.consume('b', 'post')).not.toThrow();
-    clock.mockReturnValue(160001);
-    expect(() => limits.consume('a', 'post')).not.toThrow();
-    clock.mockRestore();
+describe('Forum shared write protection failure boundary', () => {
+  it('fails closed with sanitized 503 for every write operation when storage rejects', async () => {
+    const storage = { $transaction: vi.fn().mockRejectedValue(new Error('sensitive storage diagnostics')) };
+    const module = await Test.createTestingModule({ providers: [ForumRateLimit, { provide: PrismaService, useValue: storage }] }).compile();
+    try {
+      for (const operation of Object.keys(forumLimits) as (keyof typeof forumLimits)[]) {
+        await expect(module.get(ForumRateLimit).consume('00000000-0000-4000-8000-000000000001', operation)).rejects.toMatchObject({ status: 503, code: 'SERVICE_UNAVAILABLE', details: [], message: 'Forum write protection is temporarily unavailable' });
+      }
+    } finally { await module.close(); }
+  });
+  it('retains a storage-derived retry hint for rejected admission instead of falling back to local credit', async () => {
+    const storage = { $transaction: vi.fn().mockResolvedValue(42) };
+    const module = await Test.createTestingModule({ providers: [ForumRateLimit, { provide: PrismaService, useValue: storage }] }).compile();
+    try {
+      const action = module.get(ForumRateLimit).consume('00000000-0000-4000-8000-000000000001', 'report');
+      await expect(action).rejects.toBeInstanceOf(ForumRateLimitError);
+      await expect(action).rejects.toMatchObject({ status: 429, details: [{ retryAfterSeconds: 42 }] });
+    } finally { await module.close(); }
   });
 });

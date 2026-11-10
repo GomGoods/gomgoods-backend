@@ -30,18 +30,19 @@ export class ForumService {
     assertAccountActive(user.status);
     if (admin && user.accountType !== 'ADMIN') throw new ApiException('FORBIDDEN', 'Forum moderation requires ADMIN', HttpStatus.FORBIDDEN);
   }
-  private async locked<T>(userId: string, postId: string, action: ForumMutation, work: (tx: Tx, post: LockedPost) => Promise<T>, admin = false) {
-    this.limits.consume(userId, action);
+  private async locked<T>(userId: string, postId: string | ((tx: Tx) => Promise<string>), action: ForumMutation, work: (tx: Tx, post: LockedPost) => Promise<T>, admin = false) {
+    await this.limits.consume(userId, action);
     return this.prisma.$transaction(async tx => {
       await this.actor(tx, userId, admin);
-      await tx.$queryRaw`SELECT post_id FROM "POST" WHERE post_id=${postId}::uuid FOR UPDATE`;
-      const identity = await tx.post.findUnique({ where: { id: postId }, select: { userId: true, topicId: true } });
+      const targetId = typeof postId === 'string' ? postId : await postId(tx);
+      await tx.$queryRaw`SELECT post_id FROM "POST" WHERE post_id=${targetId}::uuid FOR UPDATE`;
+      const identity = await tx.post.findUnique({ where: { id: targetId }, select: { userId: true, topicId: true } });
       if (!identity) throw this.notFound();
       // Freeze related visibility through commit, including concurrent account
       // suspension or topic deactivation outside the forum module.
       await tx.$queryRaw`SELECT user_id FROM "USER" WHERE user_id=${identity.userId}::uuid FOR SHARE`;
       await tx.$queryRaw`SELECT topic_id FROM "FORUM_TOPIC" WHERE topic_id=${identity.topicId}::uuid FOR SHARE`;
-      const post = await tx.post.findUnique({ where: { id: postId }, include: { user: { select: { status: true } }, topic: { select: { active: true } } } });
+      const post = await tx.post.findUnique({ where: { id: targetId }, include: { user: { select: { status: true } }, topic: { select: { active: true } } } });
       if (!post) throw this.notFound();
       return work(tx, post);
     });
@@ -60,9 +61,12 @@ export class ForumService {
   private async selected(tx: Tx, id: string) { return this.response(await tx.post.findUniqueOrThrow({ where: { id }, select: forumPostSelect })); }
 
   async create(userId: string, input: CreateForumPostDto) {
-    this.limits.consume(userId, 'post');
+    await this.limits.consume(userId, 'post');
     return this.prisma.$transaction(async tx => {
       await this.actor(tx, userId); await this.topic(tx, input.topicId);
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`forum:duplicate-post:${userId}`},0))::text`;
+      const duplicate = await tx.$queryRaw<{ id: string }[]>`SELECT post_id AS id FROM "POST" WHERE user_id=${userId}::uuid AND content=${input.content} AND created_at>=clock_timestamp()-interval '10 minutes' LIMIT 1`;
+      if (duplicate.length) throw new ApiException('RESOURCE_CONFLICT', 'An identical recent post already exists', HttpStatus.CONFLICT, [{ reason: 'DUPLICATE_CONTENT' }]);
       const post = await tx.post.create({ data: { userId, title: input.title, content: input.content, topicId: input.topicId, status: input.status, createdAt: new Date() }, select: forumPostSelect });
       return this.response(post);
     });
@@ -77,12 +81,12 @@ export class ForumService {
       if (post.userId !== userId) throw this.notFound();
       if (!['DRAFT', 'PUBLISHED'].includes(post.status) || post.deletedAt || post.hiddenAt) throw this.conflict();
       if (input.topicId) await this.topic(tx, input.topicId);
-      await tx.post.update({ where: { id }, data: { ...input } });
+      await tx.post.update({ where: { id }, data: { title: input.title, content: input.content, topicId: input.topicId, status: input.status } });
       return this.selected(tx, id);
     });
   }
   remove(userId: string, id: string) {
-    return this.locked(userId, id, 'edit', async (tx, post) => {
+    return this.locked(userId, id, 'delete', async (tx, post) => {
       if (post.userId !== userId) throw this.notFound();
       if (!post.deletedAt) await tx.post.update({ where: { id }, data: { status: 'REMOVED', deletedAt: new Date() } });
       return { id, status: 'REMOVED' };
@@ -145,23 +149,26 @@ export class ForumService {
     return this.locked(userId, postId, 'comment', async (tx, post) => {
       this.visible(post);
       if (input.parentId && !await tx.comment.findFirst({ where: { id: input.parentId, postId, parentId: null, ...publicCommentWhere }, select: { id: true } })) throw this.notFound();
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`forum:duplicate-comment:${userId}`},0))::text`;
+      const duplicate = await tx.$queryRaw<{ id: string }[]>`SELECT comment_id AS id FROM "COMMENT" WHERE user_id=${userId}::uuid AND post_id=${postId}::uuid AND parent_id IS NOT DISTINCT FROM ${input.parentId ?? null}::uuid AND content=${input.content} AND created_at>=clock_timestamp()-interval '1 minute' LIMIT 1`;
+      if (duplicate.length) throw new ApiException('RESOURCE_CONFLICT', 'An identical recent comment already exists', HttpStatus.CONFLICT, [{ reason: 'DUPLICATE_CONTENT' }]);
       return tx.comment.create({ data: { postId, userId, content: input.content, parentId: input.parentId, createdAt: new Date() }, select: forumCommentSelect });
     });
   }
-  private async commentPost(id: string) {
-    const row = await this.prisma.comment.findUnique({ where: { id }, select: { postId: true } });
+  private async commentPost(tx: Tx, id: string) {
+    const row = await tx.comment.findUnique({ where: { id }, select: { postId: true } });
     if (!row) throw this.notFound();
     return row.postId;
   }
   async editComment(userId: string, id: string, input: UpdateForumCommentDto) {
-    return this.locked(userId, await this.commentPost(id), 'comment', async (tx, post) => {
+    return this.locked(userId, tx => this.commentPost(tx, id), 'comment-edit', async (tx, post) => {
       this.visible(post);
       if (!await tx.comment.findFirst({ where: { id, userId, ...publicCommentWhere }, select: { id: true } })) throw this.notFound();
       return tx.comment.update({ where: { id }, data: { content: input.content }, select: forumCommentSelect });
     });
   }
   async removeComment(userId: string, id: string) {
-    return this.locked(userId, await this.commentPost(id), 'comment', async tx => {
+    return this.locked(userId, tx => this.commentPost(tx, id), 'comment-delete', async tx => {
       const row = await tx.comment.findFirst({ where: { id, userId }, select: { deletedAt: true } });
       if (!row) throw this.notFound();
       if (!row.deletedAt) await tx.comment.update({ where: { id }, data: { status: 'REMOVED', deletedAt: new Date() } });
@@ -184,13 +191,12 @@ export class ForumService {
     });
   }
   async report(userId: string, targetId: string, type: 'POST' | 'COMMENT', input: CreateForumReportDto) {
-    const postId = type === 'POST' ? targetId : await this.commentPost(targetId);
-    return this.locked(userId, postId, 'report', async (tx, post) => {
+    return this.locked(userId, type === 'POST' ? targetId : tx => this.commentPost(tx, targetId), 'report', async (tx, post) => {
       this.visible(post);
       if (type === 'COMMENT' && !await tx.comment.findFirst({ where: { id: targetId, ...publicCommentWhere }, select: { id: true } })) throw this.notFound();
       const existing = await tx.report.findFirst({ where: { userId, targetType: type, targetId }, select: forumReportSelect });
       if (existing) return existing;
-      return tx.report.create({ data: { userId, targetType: type, targetId, reason: input.reason, content: input.content, ...(type === 'POST' ? { postId } : { commentId: targetId }), createdAt: new Date() }, select: forumReportSelect });
+      return tx.report.create({ data: { userId, targetType: type, targetId, reason: input.reason, content: input.content, ...(type === 'POST' ? { postId: post.id } : { commentId: targetId }), createdAt: new Date() }, select: forumReportSelect });
     });
   }
   async reports(query: ForumPageDto) {
@@ -216,15 +222,17 @@ export class ForumService {
     }
   }
   async moderate(userId: string, id: string, type: 'POST' | 'COMMENT', input: ForumModerationDto) {
-    return this.locked(userId, type === 'POST' ? id : await this.commentPost(id), 'moderation', async (tx, post) => {
+    return this.locked(userId, type === 'POST' ? id : tx => this.commentPost(tx, id), 'moderation', async (tx, post) => {
       await this.hide(tx, userId, post, type === 'COMMENT' ? id : undefined, input.note);
       return { id, status: 'HIDDEN' };
     }, true);
   }
   async review(userId: string, id: string, input: ReviewForumReportDto) {
-    const target = await this.prisma.report.findFirst({ where: { id, targetType: { in: ['POST', 'COMMENT'] } }, select: { postId: true, comment: { select: { postId: true } } } });
-    if (!target) throw this.notFound();
-    return this.locked(userId, target.postId || target.comment!.postId, 'moderation', async (tx, post) => {
+    return this.locked(userId, async tx => {
+      const target = await tx.report.findFirst({ where: { id, targetType: { in: ['POST', 'COMMENT'] } }, select: { postId: true, comment: { select: { postId: true } } } });
+      if (!target) throw this.notFound();
+      return target.postId || target.comment!.postId;
+    }, 'moderation', async (tx, post) => {
       const report = await tx.report.findUniqueOrThrow({ where: { id } });
       if (!['OPEN', 'IN_REVIEW'].includes(report.status) || report.status === input.status || (input.action === ForumReviewAction.HIDE && input.status !== ForumReviewState.RESOLVED)) throw this.conflict();
       if (input.action === ForumReviewAction.HIDE) await this.hide(tx, userId, post, report.commentId || undefined, input.note);

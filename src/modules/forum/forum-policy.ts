@@ -31,7 +31,7 @@ export function decodeForumCursor(scope: string, value: string): ForumCursor {
     const row = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
     const date = (input: unknown) => typeof input === 'string' && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(input) && new Date(input).toISOString() === input;
     if (!row || row.v !== 1 || row.scope !== scopeHash(scope) || typeof row.id !== 'string' || !isUUID(row.id) ||
-      !date(row.createdAt) || !date(row.asOf) || Date.parse(row.asOf) > Date.now() || row.createdAt > row.asOf || !Number.isSafeInteger(row.score) || row.score < 0 ||
+      !date(row.createdAt) || !date(row.asOf) || Date.parse(row.asOf) > Date.now() || row.createdAt > row.asOf || !Number.isSafeInteger(row.score) || row.score < 0 || row.score > 2147483647 ||
       typeof row.watermark !== 'string' || !/^(0|[1-9]\d{0,18})$/.test(row.watermark) || BigInt(row.watermark) > 9223372036854775807n) throw new Error();
     return { id: row.id.toLowerCase(), createdAt: row.createdAt, asOf: row.asOf, score: row.score, watermark: row.watermark };
   } catch {

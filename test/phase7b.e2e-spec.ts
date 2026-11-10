@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { appendFileSync } from 'node:fs';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import request from 'supertest';
@@ -33,6 +34,7 @@ describe('Phase 7B forum HTTP/PostgreSQL contracts', () => {
       await prisma.report.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.post.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.forumTopic.deleteMany({ where: { id: { in: topicIds } } });
+      await prisma.forumRateLimit.deleteMany({ where: { userId: { in: userIds } } });
       await prisma.user.deleteMany({ where: { id: { in: userIds } } });
       expect(await protectedState()).toBe(before);
       expect(await prisma.user.count({ where: { id: { in: userIds } } })).toBe(0);
@@ -40,6 +42,7 @@ describe('Phase 7B forum HTTP/PostgreSQL contracts', () => {
   });
   async function actor(admin = false) {
     const id = randomUUID(); userIds.push(id);
+    if (process.env.GOMGOODS_SECURITY_FIXTURE_LOG) appendFileSync(process.env.GOMGOODS_SECURITY_FIXTURE_LOG, id + '\n');
     await prisma.user.create({ data: { id, email: `${id}@forum.e2e.gomgoods.local`, username: `f_${id.slice(0, 24)}`, passwordHash: 'unused-forum-fixture', accountType: admin ? 'ADMIN' : 'USER' } });
     const session = await prisma.authSession.create({ data: { userId: id, expiresAt: new Date(Date.now() + 3600000) } });
     const signed = await app.get(AccessTokenService).sign({ sub: id, sid: session.id, accountType: admin ? 'ADMIN' : 'USER' });
@@ -48,7 +51,7 @@ describe('Phase 7B forum HTTP/PostgreSQL contracts', () => {
   type Actor = Awaited<ReturnType<typeof actor>>;
   const bearer = (user: Actor) => ['Authorization', 'Bearer ' + user.token] as const;
   async function post(user: Actor, extra: Record<string, unknown> = {}) {
-    return (await api().post('/api/forum/posts').set(...bearer(user)).send({ title: 'Fixture ' + randomUUID(), content: 'Nội dung diễn đàn 😀', topicId, ...extra }).expect(201)).body.data;
+    return (await api().post('/api/forum/posts').set(...bearer(user)).send({ title: 'Fixture ' + randomUUID(), content: 'Nội dung diễn đàn 😀 ' + randomUUID(), topicId, ...extra }).expect(201)).body.data;
   }
   it('keeps popular pagination stable when likes change between pages', async () => {
     const author = await actor(), liker = await actor(), later = await actor();
@@ -164,9 +167,11 @@ describe('Phase 7B forum HTTP/PostgreSQL contracts', () => {
   it('deduplicates reports and atomically moderates only forum targets with retained audit', async () => {
     const owner = await actor(), reporter = await actor(), admin = await actor(true); const row = await post(owner);
     const attempts = await Promise.all(Array.from({ length: 8 }, () => api().post(`/api/forum/posts/${row.id}/reports`).set(...bearer(reporter)).send({ reason: 'SPAM', content: 'Nội dung spam' })));
-    expect(attempts.every(result => result.status === 200)).toBe(true);
-    expect(new Set(attempts.map(result => result.body.data.id)).size).toBe(1);
-    const id = attempts[0].body.data.id;
+    const accepted = attempts.filter(result => result.status === 200);
+    expect(accepted).toHaveLength(3);
+    expect(attempts.filter(result => result.status === 429)).toHaveLength(5);
+    expect(new Set(accepted.map(result => result.body.data.id)).size).toBe(1);
+    const id = accepted[0].body.data.id;
     await api().get('/api/forum/admin/reports').set(...bearer(reporter)).expect(403);
     await api().patch(`/api/forum/admin/reports/${id}`).set(...bearer(reporter)).send({ status: 'RESOLVED', action: 'HIDE', note: 'Không quyền' }).expect(403);
     const foreign = await prisma.report.create({ data: { userId: reporter.id, targetType: 'MESSAGE', targetId: randomUUID(), reason: 'non-forum fixture' } });
@@ -248,9 +253,10 @@ describe('Phase 7B forum HTTP/PostgreSQL contracts', () => {
 
   it('rejects inactive/missing topics and rate-limits authenticated post spam', async () => {
     const owner = await actor(); const inactive = randomUUID(); topicIds.push(inactive);
+    if (process.env.GOMGOODS_SECURITY_FIXTURE_LOG) appendFileSync(process.env.GOMGOODS_SECURITY_FIXTURE_LOG, 'topic:' + inactive + '\n');
     await prisma.forumTopic.create({ data: { id: inactive, slug: 'inactive-' + inactive, name: 'Inactive fixture', active: false } });
     for (const topic of [inactive, randomUUID()]) await api().post('/api/forum/posts').set(...bearer(owner)).send({ title: 'x', content: 'x', topicId: topic }).expect(404);
-    for (let i = 0; i < 3; i++) await post(owner);
+    await post(owner);
     await api().post('/api/forum/posts').set(...bearer(owner)).send({ title: 'spam', content: 'spam', topicId }).expect(429);
   });
 

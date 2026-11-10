@@ -778,6 +778,19 @@ model ForumTopic {
   @@map("FORUM_TOPIC")
 }
 
+// Independent operational counters. No domain relation or content is stored.
+model ForumRateLimit {
+  userId String @map("user_id") @db.Uuid
+  operation String @db.VarChar(30)
+  requestCount Int @map("request_count")
+  windowStartedAt DateTime @map("window_started_at") @db.Timestamptz(3)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@id([userId, operation])
+  @@index([expiresAt])
+  @@map("FORUM_RATE_LIMIT")
+}
+
 // Append-only application events freeze popular-feed rankings across cursor pages.
 // Reaction remains the canonical, unique current user/post like state.
 model ForumLikeEvent {

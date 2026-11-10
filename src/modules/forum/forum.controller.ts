@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query, UseFilters, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AccountTypes } from '../../common/decorators/account-types.decorator.js';
 import { CurrentUser } from '../../common/decorators/current-user.decorator.js';
@@ -8,6 +8,7 @@ import { UuidParamDto } from '../../common/dto/uuid-param.dto.js';
 import type { SafeUser } from '../users/user.select.js';
 import { CreateForumCommentDto, CreateForumPostDto, CreateForumReportDto, ForumFeedDto, ForumModerationDto, ForumPageDto, ReviewForumReportDto, UpdateForumCommentDto, UpdateForumPostDto } from './forum.dto.js';
 import { ForumService } from './forum.service.js';
+import { ForumExceptionFilter, ForumRequestGuard, ForumResponsePolicy } from './forum-http-policy.js';
 import { ForumResponse, forumAdminReportSchema, forumAuditSchema, forumCommentSchema, forumFeedItemSchema, forumLikeSchema, forumPageSchema, forumPostSchema, forumReportSchema, forumStateSchema, forumTopicsSchema } from './forum.responses.js';
 
 @ApiTags('Forum')
@@ -16,7 +17,11 @@ import { ForumResponse, forumAdminReportSchema, forumAuditSchema, forumCommentSc
 @ApiResponse({ status: 404, type: ApiErrorResponseDto })
 @ApiResponse({ status: 409, type: ApiErrorResponseDto })
 @ApiResponse({ status: 422, type: ApiErrorResponseDto })
-@ApiResponse({ status: 429, type: ApiErrorResponseDto })
+@ApiResponse({ status: 503, type: ApiErrorResponseDto })
+@ApiResponse({ status: 429, type: ApiErrorResponseDto, headers: { 'Retry-After': { description: 'Seconds until this write budget can be retried', schema: { type: 'integer', minimum: 1 } } } })
+@UseGuards(ForumRequestGuard)
+@UseInterceptors(ForumResponsePolicy)
+@UseFilters(ForumExceptionFilter)
 @Controller('forum')
 export class ForumController {
   constructor(private readonly forum: ForumService) {}
