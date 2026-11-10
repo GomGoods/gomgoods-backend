@@ -360,6 +360,7 @@ async function main() {
       userId: id.buyer,
       title: "My first Nendoroid",
       content: "The order arrived safely. Any display tips?",
+      topicId: "00000000-0000-4000-8000-000000007001",
       status: "PUBLISHED",
     },
   });
@@ -368,10 +369,16 @@ async function main() {
     update: { content: "Keep it away from direct sunlight." },
     create: { id: "00000000-0000-4000-8000-000000000131", postId: id.post, userId: id.storeOwner, content: "Keep it away from direct sunlight." },
   });
-  await prisma.reaction.upsert({
-    where: { postId_userId: { postId: id.post, userId: id.storeOwner } },
-    update: { type: "LIKE" },
-    create: { postId: id.post, userId: id.storeOwner, type: "LIKE" },
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT post_id FROM "POST" WHERE post_id=${id.post}::uuid FOR UPDATE`;
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(7002000000001)::text`;
+    await tx.reaction.upsert({
+      where: { postId_userId: { postId: id.post, userId: id.storeOwner } },
+      update: { type: "LIKE" },
+      create: { postId: id.post, userId: id.storeOwner, type: "LIKE" },
+    });
+    const event = await tx.forumLikeEvent.findFirst({ where: { postId: id.post, userId: id.storeOwner }, orderBy: { sequence: "desc" } });
+    if (!event?.liked) await tx.forumLikeEvent.create({ data: { postId: id.post, userId: id.storeOwner, liked: true } });
   });
   // Chat fixture must satisfy Phase 7A membership/sequence constraints atomically.
   // Preserve existing history on subsequent seed runs. This seed is not run by E2E.

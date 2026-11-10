@@ -210,6 +210,8 @@ model User {
   sellerConversations       Conversation[] @relation("ChatSeller")
   reviews                   Review[]
   reports                   Report[]
+  forumModerationActions    ForumModerationAction[]
+  forumLikeEvents           ForumLikeEvent[]
   supportTickets            SupportTicket[]
   authSessions              AuthSession[]
 
@@ -745,16 +747,49 @@ model Post {
   title     String     @db.VarChar(250)
   content   String     @db.Text
   status    PostStatus @default(DRAFT)
+  topicId   String     @map("topic_id") @db.Uuid
+  deletedAt DateTime?  @map("deleted_at") @db.Timestamptz(6)
+  hiddenAt  DateTime?  @map("hidden_at") @db.Timestamptz(6)
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   comments  Comment[]
   reactions Reaction[]
+  topic     ForumTopic @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  reports   Report[]
+  moderationActions ForumModerationAction[]
+  likeEvents ForumLikeEvent[]
 
   @@index([status, createdAt])
   @@index([userId, createdAt])
+  @@index([topicId, status, createdAt, id])
+  @@index([status, createdAt, id])
   @@map("POST")
+}
+
+model ForumTopic {
+  id String @id @default(uuid()) @map("topic_id") @db.Uuid
+  slug String @unique @db.VarChar(50)
+  name String @db.VarChar(120)
+  active Boolean @default(true)
+  posts Post[]
+
+  @@map("FORUM_TOPIC")
+}
+
+// Append-only application events freeze popular-feed rankings across cursor pages.
+// Reaction remains the canonical, unique current user/post like state.
+model ForumLikeEvent {
+  sequence BigInt @id @default(autoincrement())
+  postId String @map("post_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  liked Boolean
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, userId, sequence(sort: Desc)])
+  @@map("FORUM_LIKE_EVENT")
 }
 
 model Comment {
@@ -762,13 +797,23 @@ model Comment {
   postId    String   @map("post_id") @db.Uuid
   userId    String   @map("user_id") @db.Uuid
   content   String   @db.Text
+  parentId  String?  @map("parent_id") @db.Uuid
+  status    PostStatus @default(PUBLISHED)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  hiddenAt  DateTime? @map("hidden_at") @db.Timestamptz(6)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  parent Comment? @relation("ForumReplies", fields: [postId, parentId], references: [postId, id], onDelete: NoAction, onUpdate: NoAction)
+  replies Comment[] @relation("ForumReplies")
+  reports Report[]
+  moderationActions ForumModerationAction[]
 
+  @@unique([postId, id])
   @@index([postId, createdAt])
+  @@index([postId, status, createdAt, id])
   @@index([userId])
   @@map("COMMENT")
 }
@@ -872,14 +917,40 @@ model Report {
   reason     String           @db.VarChar(255)
   content    String?          @db.Text
   status     ReportStatus     @default(OPEN)
+  postId     String?          @map("forum_post_id") @db.Uuid
+  commentId  String?          @map("forum_comment_id") @db.Uuid
   createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  post Post? @relation(fields: [postId], references: [id], onDelete: Restrict)
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Restrict)
+  moderationActions ForumModerationAction[]
 
   @@index([targetType, targetId])
   @@index([status, createdAt])
   @@map("REPORT")
+}
+
+model ForumModerationAction {
+  id String @id @default(uuid()) @map("action_id") @db.Uuid
+  actorId String @map("actor_id") @db.Uuid
+  postId String @map("post_id") @db.Uuid
+  commentId String? @map("comment_id") @db.Uuid
+  reportId String? @map("report_id") @db.Uuid
+  action String @db.VarChar(30)
+  fromStatus String @map("from_status") @db.VarChar(30)
+  toStatus String @map("to_status") @db.VarChar(30)
+  note String @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  post Post @relation(fields: [postId], references: [id], onDelete: Restrict)
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Restrict)
+  report Report? @relation(fields: [reportId], references: [id], onDelete: Restrict)
+
+  @@index([postId, createdAt])
+  @@index([reportId, createdAt])
+  @@map("FORUM_MODERATION_ACTION")
 }
 
 model SupportTicket {
