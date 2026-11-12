@@ -183,6 +183,8 @@ export class CampaignService {
       await this.session(tx, actorId);
       const row = await this.participation(tx, id); const status = { verify: 'VERIFIED', reject: 'REJECTED', revoke: 'REVOKED' }[action] as ParticipationStatus;
       if (row.status === status) return { id, status };
+      const participantUser = await tx.user.findUnique({ where: { id: identity.userId }, select: { status: true } });
+      if (action === 'verify' && participantUser?.status !== 'ACTIVE') throw this.conflict('Participant must be active before verification');
       if (action === 'revoke' ? row.status !== 'VERIFIED' : row.status !== 'SUBMITTED' || !row.submittedAt || row.submittedAt >= campaign.endsAt || !['ACTIVE', 'COMPLETED'].includes(campaign.status)) throw this.conflict();
       const audit = await this.audit(tx, campaign.id, actorId, action.toUpperCase(), row.status, status, note, id);
       await tx.campaignParticipant.update({ where: { id }, data: { status } });
