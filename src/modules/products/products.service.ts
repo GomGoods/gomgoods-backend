@@ -12,6 +12,7 @@ import {
   StoreStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import type { Prisma } from '../../generated/prisma/client.js';
 import { StoresService } from '../stores/stores.service.js';
 import type { SafeUser } from '../users/user.select.js';
 import type { CreateProductDto } from './dto/create-product.dto.js';
@@ -110,7 +111,9 @@ export class ProductsService {
     const product = await this.findOwnedProduct(id, user.id);
     this.assertProductEditable(product.status);
     if (input.categoryId) await this.requireActiveCategory(input.categoryId);
-    return this.prisma.product.update({
+    return this.prisma.$transaction(async tx => {
+    await this.lockAuctionProduct(tx,id);
+    return tx.product.update({
       where: { id: product.id },
       data: {
         categoryId: input.categoryId,
@@ -119,11 +122,13 @@ export class ProductsService {
       },
       select: productDetailSelect,
     });
+    });
   }
 
   async archive(id: string, user: SafeUser) {
     const product = await this.findOwnedProduct(id, user.id);
     return this.prisma.$transaction(async (transaction) => {
+      await this.lockAuctionProduct(transaction,id);
       await transaction.listing.updateMany({
         where: {
           productId: product.id,
@@ -143,6 +148,14 @@ export class ProductsService {
         select: productDetailSelect,
       });
     });
+  }
+
+  private async lockAuctionProduct(tx:Prisma.TransactionClient,id:string){
+    // Same listing -> product order as auction creation/bidding. Lock every
+    // listing before checking so a concurrent conversion cannot slip past archive.
+    await tx.$queryRaw`SELECT listing_id FROM "LISTING" WHERE product_id=${id}::uuid ORDER BY listing_id FOR UPDATE`;
+    await tx.$queryRaw`SELECT product_id FROM "PRODUCT" WHERE product_id=${id}::uuid FOR UPDATE`;
+    if(await tx.auction.findFirst({where:{managed:true,status:{in:['SCHEDULED','LIVE','AWAITING_PAYMENT']},listing:{productId:id}},select:{id:true}}))throw new ApiException('RESOURCE_CONFLICT','Product is committed to an auction; use its audited lifecycle',409);
   }
 
   private async requireActiveCategory(categoryId: string): Promise<void> {

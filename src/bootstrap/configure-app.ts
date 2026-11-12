@@ -9,6 +9,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { ApiException } from '../common/exceptions/api.exception.js';
 import type { ErrorDetail } from '../common/exceptions/api.exception.js';
+import { ChatIoAdapter } from '../modules/chat/chat.adapter.js';
 
 function validationDetails(errors: ValidationError[]): ErrorDetail[] {
   return errors.flatMap((error) => [
@@ -23,6 +24,7 @@ function validationDetails(errors: ValidationError[]): ErrorDetail[] {
 export function configureApp(app: INestApplication): void {
   const config = app.get(ConfigService);
   app.setGlobalPrefix('api');
+  app.useWebSocketAdapter(new ChatIoAdapter(app, config.getOrThrow<string[]>('CORS_ORIGINS')));
   app.enableCors({
     origin: config.getOrThrow<string[]>('CORS_ORIGINS'),
     credentials: true,

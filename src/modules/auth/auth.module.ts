@@ -25,6 +25,6 @@ import { RefreshCredentialCodec } from './refresh-credential.codec.js';
     RefreshCookieService,
     RefreshCredentialCodec,
   ],
-  exports: [AccessTokenGuard, AccountTypeGuard],
+  exports: [AccessTokenGuard, AccountTypeGuard, AccessTokenService],
 })
 export class AuthModule {}

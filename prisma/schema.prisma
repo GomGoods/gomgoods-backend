@@ -53,6 +53,11 @@ enum ListingStatus {
   REMOVED
 }
 
+enum SellingMode {
+  FIXED_PRICE
+  AUCTION
+}
+
 // Commerce
 enum OrderStatus {
   PENDING
@@ -111,6 +116,10 @@ enum AuctionStatus {
   LIVE
   ENDED
   CANCELLED
+  CLOSED_UNSOLD
+  AWAITING_PAYMENT
+  SETTLED
+  DEFAULTED
 }
 
 enum DisputeStatus {
@@ -126,6 +135,22 @@ enum CampaignStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+}
+
+enum CampaignType {
+  COMMUNITY_EVENT
+  ITEM_DONATION
+  COMMUNITY_CHALLENGE
+}
+
+enum ParticipationStatus {
+  REGISTERED
+  IN_PROGRESS
+  SUBMITTED
+  VERIFIED
+  REJECTED
+  WITHDRAWN
+  REVOKED
 }
 
 // Community and support
@@ -190,21 +215,30 @@ model User {
   following                 Follow[]
   followingUsers            UserFollow[]              @relation("UserFollowing")
   followers                 UserFollow[]              @relation("UserFollowers")
+  cart                      Cart?
+  checkoutGroups            CheckoutGroup[]
   listings                  Listing[]                 @relation("PersonalListings")
   collections               Collection[]
   orders                    Order[]
+  sellerOrders              Order[]                   @relation("OrderSellerUser")
   shipmentSellerAssignments Shipment[]                @relation("ShipmentSellerUser")
   auctionWins               Auction[]                 @relation("AuctionWinner")
   bids                      Bid[]
   disputes                  Dispute[]
   campaignParticipations    CampaignParticipant[]
+  organizedCampaigns        Campaign[] @relation("CampaignOrganizer")
+  campaignActions           CampaignAudit[]
   posts                     Post[]
   comments                  Comment[]
   reactions                 Reaction[]
   conversationParticipants  ConversationParticipant[]
   messages                  Message[]
+  buyerConversations        Conversation[] @relation("ChatBuyer")
+  sellerConversations       Conversation[] @relation("ChatSeller")
   reviews                   Review[]
   reports                   Report[]
+  forumModerationActions    ForumModerationAction[]
+  forumLikeEvents           ForumLikeEvent[]
   supportTickets            SupportTicket[]
   authSessions              AuthSession[]
 
@@ -257,6 +291,7 @@ model Address {
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders Order[]
+  auctionBids Bid[]
 
   @@index([userId])
   @@map("ADDRESS")
@@ -275,6 +310,7 @@ model Store {
   user      User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   products  Product[]
   followers Follow[]
+  orders    Order[]    @relation("OrderStore")
   shipments Shipment[] @relation("ShipmentStore")
 
   @@index([status])
@@ -355,6 +391,7 @@ model Listing {
   condition    ListingCondition
   description  String?          @db.Text
   status       ListingStatus    @default(DRAFT)
+  sellingMode SellingMode @default(FIXED_PRICE) @map("selling_mode")
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -362,6 +399,7 @@ model Listing {
   sellerUser      User?            @relation("PersonalListings", fields: [sellerUserId], references: [id], onDelete: Restrict)
   images          ListingImage[]
   collectionItems CollectionItem[]
+  cartItems       CartItem[]
   orderItems      OrderItem[]
   auction         Auction?
 
@@ -369,6 +407,34 @@ model Listing {
   @@index([sellerUserId, status])
   @@index([status, createdAt])
   @@map("LISTING")
+}
+
+model Cart {
+  id        String     @id @default(uuid()) @map("cart_id") @db.Uuid
+  userId    String     @unique @map("user_id") @db.Uuid
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@map("CART")
+}
+
+model CartItem {
+  id        String   @id @default(uuid()) @map("cart_item_id") @db.Uuid
+  cartId    String   @map("cart_id") @db.Uuid
+  listingId String   @map("listing_id") @db.Uuid
+  quantity  Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+
+  @@unique([cartId, listingId])
+  @@index([listingId])
+  @@map("CART_ITEM")
 }
 
 model ListingImage {
@@ -413,34 +479,60 @@ model CollectionItem {
 }
 
 model Order {
-  id        String      @id @default(uuid()) @map("order_id") @db.Uuid
-  userId    String      @map("user_id") @db.Uuid
-  addressId String      @map("address_id") @db.Uuid
-  total     Decimal     @map("total_amount") @db.Decimal(14, 2)
-  status    OrderStatus @default(PENDING)
-  note      String?     @db.Text
-  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                  String      @id @default(uuid()) @map("order_id") @db.Uuid
+  checkoutGroupId     String?     @map("checkout_group_id") @db.Uuid
+  userId              String      @map("user_id") @db.Uuid
+  addressId           String      @map("address_id") @db.Uuid
+  sellerUserId        String?     @map("seller_user_id") @db.Uuid
+  storeId             String?     @map("store_id") @db.Uuid
+  total               Decimal     @map("total_amount") @db.Decimal(14, 2)
+  paymentMethod       PaymentMethod @default(BANK_TRANSFER) @map("payment_method")
+  status              OrderStatus @default(PENDING)
+  note                String?     @db.Text
+  expiresAt           DateTime?   @map("expires_at") @db.Timestamptz(6)
+  cancelledAt         DateTime?   @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason        String?     @map("cancel_reason") @db.Text
+  shippingRecipient   String      @default("") @map("shipping_recipient") @db.VarChar(150)
+  shippingPhone       String      @default("") @map("shipping_phone") @db.VarChar(30)
+  shippingAddressLine String      @default("") @map("shipping_address_line") @db.VarChar(255)
+  shippingCity        String      @default("") @map("shipping_city") @db.VarChar(100)
+  shippingDistrict    String      @default("") @map("shipping_district") @db.VarChar(100)
+  shippingWard        String      @default("") @map("shipping_ward") @db.VarChar(100)
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  user      User        @relation(fields: [userId], references: [id], onDelete: Restrict)
-  address   Address     @relation(fields: [addressId], references: [id], onDelete: Restrict)
-  items     OrderItem[]
-  payments  Payment[]
-  shipments Shipment[]
-  disputes  Dispute[]
+  checkoutGroup CheckoutGroup? @relation(fields: [checkoutGroupId], references: [id], onDelete: Restrict)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  address       Address        @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  sellerUser    User?          @relation("OrderSellerUser", fields: [sellerUserId], references: [id], onDelete: Restrict)
+  store         Store?         @relation("OrderStore", fields: [storeId], references: [id], onDelete: Restrict)
+  items         OrderItem[]
+  payments      Payment[]
+  shipments     Shipment[]
+  disputes      Dispute[]
+  wonAuction Auction?
 
   @@index([userId, createdAt])
+  @@index([checkoutGroupId])
+  @@index([sellerUserId, createdAt])
+  @@index([storeId, createdAt])
+  @@index([status, expiresAt])
   @@index([status, createdAt])
   @@map("ORDER")
 }
 
 model OrderItem {
-  id        String  @id @default(uuid()) @map("order_item_id") @db.Uuid
-  orderId   String  @map("order_id") @db.Uuid
-  listingId String  @map("listing_id") @db.Uuid
-  quantity  Int
-  unitPrice Decimal @map("unit_price") @db.Decimal(14, 2)
-  subtotal  Decimal @db.Decimal(14, 2)
+  id                         String   @id @default(uuid()) @map("order_item_id") @db.Uuid
+  orderId                    String   @map("order_id") @db.Uuid
+  listingId                  String   @map("listing_id") @db.Uuid
+  quantity                   Int
+  unitPrice                  Decimal  @map("unit_price") @db.Decimal(14, 2)
+  subtotal                   Decimal  @db.Decimal(14, 2)
+  listingDescriptionSnapshot String?  @map("listing_description_snapshot") @db.Text
+  productIdSnapshot          String?  @map("product_id_snapshot") @db.Uuid
+  productNameSnapshot        String?  @map("product_name_snapshot") @db.VarChar(200)
+  storeNameSnapshot          String?  @map("store_name_snapshot") @db.VarChar(150)
+  sellerUsernameSnapshot     String?  @map("seller_username_snapshot") @db.VarChar(50)
 
   order         Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
   listing       Listing        @relation(fields: [listingId], references: [id], onDelete: Restrict)
@@ -450,6 +542,22 @@ model OrderItem {
 
   @@index([listingId])
   @@map("ORDER_ITEM")
+}
+
+model CheckoutGroup {
+  id             String   @id @default(uuid()) @map("checkout_group_id") @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(120)
+  requestHash    String   @map("request_hash") @db.Char(64)
+  total          Decimal  @map("total_amount") @db.Decimal(14, 2)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  orders Order[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@map("CHECKOUT_GROUP")
 }
 
 model Payment {
@@ -464,9 +572,49 @@ model Payment {
 
   order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
   transactions Transaction[]
+  events       PaymentEvent[]
 
   @@index([orderId, status])
   @@map("PAYMENT")
+}
+
+enum PaymentEventProvider {
+  MOCK
+  SEPAY_TEST
+}
+
+enum PaymentEventStatus {
+  RECEIVED
+  APPLIED
+  REJECTED
+  IGNORED
+}
+
+model PaymentEvent {
+  id               String               @id @default(uuid()) @map("payment_event_id") @db.Uuid
+  provider         PaymentEventProvider
+  providerEventId  String               @map("provider_event_id") @db.VarChar(120)
+  bankReference    String?              @map("bank_reference") @db.VarChar(150)
+  payloadHash      String               @map("payload_hash") @db.Char(64)
+  accountNumber    String               @map("account_number") @db.VarChar(30)
+  gateway          String               @db.VarChar(100)
+  paymentReference String?              @map("payment_reference") @db.VarChar(50)
+  amount           Decimal              @db.Decimal(14, 2)
+  transferType     String               @map("transfer_type") @db.VarChar(3)
+  occurredAt       DateTime             @map("occurred_at") @db.Timestamptz(6)
+  status           PaymentEventStatus   @default(RECEIVED)
+  reason           String?              @db.VarChar(100)
+  paymentId        String?              @map("payment_id") @db.Uuid
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  payment Payment? @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, providerEventId])
+  @@unique([provider, accountNumber, gateway, bankReference], map: "PAYMENT_EVENT_bank_reference_key")
+  @@index([status, createdAt])
+  @@index([paymentId])
+  @@map("PAYMENT_EVENT")
 }
 
 model Transaction {
@@ -534,10 +682,16 @@ model Auction {
   status        AuctionStatus @default(DRAFT)
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  managed Boolean @default(false)
+  originalEndsAt DateTime? @map("original_end_time") @db.Timestamptz(3)
+  version BigInt @default(0)
+  orderId String? @unique @map("order_id") @db.Uuid
 
   listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
   winner  User?   @relation("AuctionWinner", fields: [winnerId], references: [id], onDelete: Restrict)
   bids    Bid[]
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  events AuctionEvent[]
 
   @@index([status, endsAt])
   @@map("AUCTION")
@@ -549,13 +703,43 @@ model Bid {
   userId    String   @map("user_id") @db.Uuid
   amount    Decimal  @db.Decimal(14, 2)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  idempotencyKey String? @map("idempotency_key") @db.Uuid
+  sequence BigInt?
+  addressId String? @map("address_id") @db.Uuid
+  shippingSnapshot Json? @map("shipping_snapshot")
 
   auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  address Address? @relation(fields: [addressId], references: [id], onDelete: Restrict)
 
   @@index([auctionId, createdAt])
   @@index([userId, createdAt])
+  @@unique([auctionId, userId, idempotencyKey])
+  @@unique([auctionId, sequence])
   @@map("BID")
+}
+
+model AuctionEvent {
+  id String @id @default(uuid()) @map("event_id") @db.Uuid
+  auctionId String @map("auction_id") @db.Uuid
+  actorId String? @map("actor_id") @db.Uuid
+  version BigInt
+  action String @db.VarChar(40)
+  note String @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  auction Auction @relation(fields: [auctionId], references: [id], onDelete: Restrict)
+  @@unique([auctionId, version])
+  @@map("AUCTION_EVENT")
+}
+
+model AuctionRateLimit {
+  userId String @map("user_id") @db.Uuid
+  operation String @db.VarChar(30)
+  count Int
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  @@id([userId, operation])
+  @@index([expiresAt])
+  @@map("AUCTION_RATE_LIMIT")
 }
 
 model Dispute {
@@ -601,10 +785,20 @@ model Campaign {
   status      CampaignStatus @default(DRAFT)
   createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  type CampaignType @default(COMMUNITY_EVENT)
+  organizerId String? @map("organizer_id") @db.Uuid
+  instructions String @default("") @db.Text
+  completionCriteria String @default("") @map("completion_criteria") @db.Text
+  eligibility String @default("Tài khoản USER đang hoạt động") @db.Text
+  minimumAccountAgeDays Int @default(0) @map("minimum_account_age_days")
+  participationLimit Int? @map("participation_limit")
 
   participants CampaignParticipant[]
+  organizer User? @relation("CampaignOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
+  actions CampaignAudit[]
 
   @@index([status, startsAt])
+  @@index([createdAt, id])
   @@map("CAMPAIGN")
 }
 
@@ -614,13 +808,63 @@ model CampaignParticipant {
   userId     String   @map("user_id") @db.Uuid
   score      Int      @default(0)
   joinedAt   DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+  status ParticipationStatus @default(REGISTERED)
+  evidenceText String? @map("evidence_text") @db.Text
+  evidenceUrl String? @map("evidence_url") @db.Text
+  submissionKey String? @map("submission_key") @db.Uuid
+  submittedAt DateTime? @map("submitted_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions CampaignAudit[]
+  achievement CampaignAchievement?
 
   @@unique([campaignId, userId])
   @@index([userId])
+  @@index([campaignId, status, joinedAt, id], map: "CAMPAIGN_PARTICIPANT_campaign_id_status_joined_at_participant_i")
   @@map("CAMPAIGN_PARTICIPANT")
+}
+
+model CampaignAudit {
+  id String @id @default(uuid()) @map("action_id") @db.Uuid
+  sequence BigInt @unique @default(autoincrement())
+  campaignId String @map("campaign_id") @db.Uuid
+  participantId String? @map("participant_id") @db.Uuid
+  actorId String @map("actor_id") @db.Uuid
+  action String @db.VarChar(30)
+  fromStatus String? @map("from_status") @db.VarChar(30)
+  toStatus String @map("to_status") @db.VarChar(30)
+  note String @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  participant CampaignParticipant? @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  achievement CampaignAchievement?
+  @@index([campaignId, createdAt, id])
+  @@map("CAMPAIGN_AUDIT")
+}
+
+model CampaignAchievement {
+  id String @id @default(uuid()) @map("achievement_id") @db.Uuid
+  participantId String @unique @map("participant_id") @db.Uuid
+  verificationId String @unique @map("verification_id") @db.Uuid
+  issuedAt DateTime @default(now()) @map("issued_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  featuredSlot Int? @map("featured_slot") @db.SmallInt
+  participant CampaignParticipant @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  verification CampaignAudit @relation(fields: [verificationId], references: [id], onDelete: Restrict)
+  @@map("CAMPAIGN_ACHIEVEMENT")
+}
+
+model CampaignRateLimit {
+  userId String @map("user_id") @db.Uuid
+  operation String @db.VarChar(30)
+  requestCount Int @map("request_count")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  @@id([userId, operation])
+  @@index([expiresAt])
+  @@map("CAMPAIGN_RATE_LIMIT")
 }
 
 model Post {
@@ -629,16 +873,62 @@ model Post {
   title     String     @db.VarChar(250)
   content   String     @db.Text
   status    PostStatus @default(DRAFT)
+  topicId   String     @map("topic_id") @db.Uuid
+  deletedAt DateTime?  @map("deleted_at") @db.Timestamptz(6)
+  hiddenAt  DateTime?  @map("hidden_at") @db.Timestamptz(6)
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Restrict)
   comments  Comment[]
   reactions Reaction[]
+  topic     ForumTopic @relation(fields: [topicId], references: [id], onDelete: Restrict)
+  reports   Report[]
+  moderationActions ForumModerationAction[]
+  likeEvents ForumLikeEvent[]
 
   @@index([status, createdAt])
   @@index([userId, createdAt])
+  @@index([topicId, status, createdAt, id])
+  @@index([status, createdAt, id])
   @@map("POST")
+}
+
+model ForumTopic {
+  id String @id @default(uuid()) @map("topic_id") @db.Uuid
+  slug String @unique @db.VarChar(50)
+  name String @db.VarChar(120)
+  active Boolean @default(true)
+  posts Post[]
+
+  @@map("FORUM_TOPIC")
+}
+
+// Independent operational counters. No domain relation or content is stored.
+model ForumRateLimit {
+  userId String @map("user_id") @db.Uuid
+  operation String @db.VarChar(30)
+  requestCount Int @map("request_count")
+  windowStartedAt DateTime @map("window_started_at") @db.Timestamptz(3)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@id([userId, operation])
+  @@index([expiresAt])
+  @@map("FORUM_RATE_LIMIT")
+}
+
+// Append-only application events freeze popular-feed rankings across cursor pages.
+// Reaction remains the canonical, unique current user/post like state.
+model ForumLikeEvent {
+  sequence BigInt @id @default(autoincrement())
+  postId String @map("post_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  liked Boolean
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId, userId, sequence(sort: Desc)])
+  @@map("FORUM_LIKE_EVENT")
 }
 
 model Comment {
@@ -646,13 +936,23 @@ model Comment {
   postId    String   @map("post_id") @db.Uuid
   userId    String   @map("user_id") @db.Uuid
   content   String   @db.Text
+  parentId  String?  @map("parent_id") @db.Uuid
+  status    PostStatus @default(PUBLISHED)
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
+  hiddenAt  DateTime? @map("hidden_at") @db.Timestamptz(6)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  parent Comment? @relation("ForumReplies", fields: [postId, parentId], references: [postId, id], onDelete: NoAction, onUpdate: NoAction)
+  replies Comment[] @relation("ForumReplies")
+  reports Report[]
+  moderationActions ForumModerationAction[]
 
+  @@unique([postId, id])
   @@index([postId, createdAt])
+  @@index([postId, status, createdAt, id])
   @@index([userId])
   @@map("COMMENT")
 }
@@ -674,12 +974,22 @@ model Reaction {
 
 model Conversation {
   id        String   @id @default(uuid()) @map("conversation_id") @db.Uuid
+  buyerId   String   @map("buyer_id") @db.Uuid
+  sellerUserId String @map("seller_user_id") @db.Uuid
+  listingId String   @map("listing_id") @db.Uuid
+  storeId   String?  @map("store_id") @db.Uuid
+  contextSnapshot Json @map("context_snapshot")
+  lastSequence BigInt @default(0) @map("last_sequence")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   participants ConversationParticipant[]
   messages     Message[]
+  buyer User @relation("ChatBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  seller User @relation("ChatSeller", fields: [sellerUserId], references: [id], onDelete: Restrict)
 
+  @@unique([buyerId, listingId])
+  @@index([updatedAt, id])
   @@map("CONVERSATION")
 }
 
@@ -688,9 +998,12 @@ model ConversationParticipant {
   conversationId String   @map("conversation_id") @db.Uuid
   userId         String   @map("user_id") @db.Uuid
   joinedAt       DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+  lastDeliveredSequence BigInt @default(0) @map("last_delivered_sequence")
+  lastReadSequence BigInt @default(0) @map("last_read_sequence")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sentMessages Message[] @relation("ChatMembershipSender")
 
   @@unique([conversationId, userId])
   @@index([userId, joinedAt])
@@ -704,10 +1017,15 @@ model Message {
   content        String        @db.Text
   status         MessageStatus @default(SENT)
   sentAt         DateTime      @default(now()) @map("sent_at") @db.Timestamptz(6)
+  sequence       BigInt
+  clientMessageId String @map("client_message_id") @db.Uuid
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  membership ConversationParticipant @relation("ChatMembershipSender", fields: [conversationId, senderId], references: [conversationId, userId], onDelete: Restrict, map: "MESSAGE_membership_fkey")
 
+  @@unique([conversationId, sequence])
+  @@unique([conversationId, senderId, clientMessageId])
   @@index([conversationId, sentAt])
   @@index([senderId])
   @@map("MESSAGE")
@@ -738,14 +1056,40 @@ model Report {
   reason     String           @db.VarChar(255)
   content    String?          @db.Text
   status     ReportStatus     @default(OPEN)
+  postId     String?          @map("forum_post_id") @db.Uuid
+  commentId  String?          @map("forum_comment_id") @db.Uuid
   createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  post Post? @relation(fields: [postId], references: [id], onDelete: Restrict)
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Restrict)
+  moderationActions ForumModerationAction[]
 
   @@index([targetType, targetId])
   @@index([status, createdAt])
   @@map("REPORT")
+}
+
+model ForumModerationAction {
+  id String @id @default(uuid()) @map("action_id") @db.Uuid
+  actorId String @map("actor_id") @db.Uuid
+  postId String @map("post_id") @db.Uuid
+  commentId String? @map("comment_id") @db.Uuid
+  reportId String? @map("report_id") @db.Uuid
+  action String @db.VarChar(30)
+  fromStatus String @map("from_status") @db.VarChar(30)
+  toStatus String @map("to_status") @db.VarChar(30)
+  note String @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  post Post @relation(fields: [postId], references: [id], onDelete: Restrict)
+  comment Comment? @relation(fields: [commentId], references: [id], onDelete: Restrict)
+  report Report? @relation(fields: [reportId], references: [id], onDelete: Restrict)
+
+  @@index([postId, createdAt])
+  @@index([reportId, createdAt])
+  @@map("FORUM_MODERATION_ACTION")
 }
 
 model SupportTicket {

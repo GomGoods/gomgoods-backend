@@ -7,6 +7,7 @@ import { ApiResponseInterceptor } from './api-response.interceptor.js';
 describe('ApiResponseInterceptor', () => {
   it('wraps controller data in the approved success envelope', async () => {
     const context = {
+      getType: () => 'http',
       switchToHttp: () => ({ getResponse: () => ({ statusCode: 200 }) }),
     } as ExecutionContext;
     const next = { handle: () => of({ status: 'ok' }) } as CallHandler;

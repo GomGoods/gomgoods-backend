@@ -28,6 +28,8 @@ export function publicListingWhere(
 ): Prisma.ListingWhereInput {
   const and: Prisma.ListingWhereInput[] = [
     { status: ListingStatus.ACTIVE },
+    { sellingMode: 'FIXED_PRICE' },
+    { quantity: { gt: 0 } },
     {
       OR: [
         {

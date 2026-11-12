@@ -9,6 +9,7 @@ export const listingSelect = {
   condition: true,
   description: true,
   status: true,
+  sellingMode: true,
   createdAt: true,
   updatedAt: true,
   images: {

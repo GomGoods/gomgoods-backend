@@ -11,6 +11,7 @@ import {
   StoreStatus,
 } from '../../generated/prisma/enums.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import type { Prisma } from '../../generated/prisma/client.js';
 import type { SafeUser } from '../users/user.select.js';
 import type { CreateListingDto } from './dto/create-listing.dto.js';
 import type { ListingQueryDto } from './dto/listing-query.dto.js';
@@ -93,9 +94,12 @@ export class ListingsService {
   }
 
   async update(id: string, user: SafeUser, input: UpdateListingDto) {
-    const listing = await this.requireOwnedListing(id, user.id);
+    return this.prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT listing_id FROM "LISTING" WHERE listing_id=${id}::uuid FOR UPDATE`;
+    const listing = await this.requireOwnedListing(id, user.id, tx);
     this.assertListingEditable(listing.status);
-    return this.prisma.listing.update({
+    if (listing.sellingMode === 'AUCTION') throw new ApiException('RESOURCE_CONFLICT', 'Auction listing rules cannot be edited', 409);
+    return tx.listing.update({
       where: { id },
       data: {
         price: input.price,
@@ -105,6 +109,7 @@ export class ListingsService {
       },
       select: listingSelect,
     });
+    });
   }
 
   async updateStatus(
@@ -112,8 +117,11 @@ export class ListingsService {
     user: SafeUser,
     input: UpdateListingStatusDto,
   ) {
-    const listing = await this.requireOwnedListing(id, user.id);
+    return this.prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT listing_id FROM "LISTING" WHERE listing_id=${id}::uuid FOR UPDATE`;
+    const listing = await this.requireOwnedListing(id, user.id, tx);
     this.assertListingEditable(listing.status);
+    if (listing.sellingMode === 'AUCTION') throw new ApiException('RESOURCE_CONFLICT', 'Use the auction cancellation lifecycle', 409);
     if (!this.isAllowedStatusTransition(listing.status, input.status)) {
       throw new ApiException(
         'INVALID_LISTING_STATUS_TRANSITION',
@@ -121,10 +129,11 @@ export class ListingsService {
         HttpStatus.CONFLICT,
       );
     }
-    return this.prisma.listing.update({
+    return tx.listing.update({
       where: { id },
       data: { status: input.status },
       select: listingSelect,
+    });
     });
   }
 
@@ -136,12 +145,13 @@ export class ListingsService {
     return publicListingWhere(query);
   }
 
-  private async requireOwnedListing(id: string, userId: string) {
-    const listing = await this.prisma.listing.findUnique({
+  private async requireOwnedListing(id: string, userId: string, database: Prisma.TransactionClient | PrismaService = this.prisma) {
+    const listing = await database.listing.findUnique({
       where: { id },
       select: {
         id: true,
         status: true,
+        sellingMode: true,
         sellerUserId: true,
         product: {
           select: {

@@ -6,6 +6,7 @@ import {
   ProductStatus,
   StoreStatus,
 } from '../../generated/prisma/enums.js';
+import { ListingQueryDto } from './dto/listing-query.dto.js';
 import { ListingsService } from './listings.service.js';
 
 const owner = {
@@ -32,6 +33,7 @@ describe('ListingsService', () => {
         update: vi.fn(),
       },
     };
+    Object.assign(prisma,{$queryRaw:vi.fn().mockResolvedValue([]),$transaction:vi.fn(callback=>callback(prisma))});
     const service = new ListingsService(prisma as never);
 
     await expect(
@@ -54,6 +56,7 @@ describe('ListingsService', () => {
         update: vi.fn(),
       },
     };
+    Object.assign(prisma,{$queryRaw:vi.fn().mockResolvedValue([]),$transaction:vi.fn(callback=>callback(prisma))});
     const service = new ListingsService(prisma as never);
 
     await expect(
@@ -72,7 +75,12 @@ describe('ListingsService', () => {
     const service = new ListingsService(prisma as never);
 
     await expect(
-      service.findAll({ minPrice: '100.00', maxPrice: '99.99' }),
+      service.findAll(
+        Object.assign(new ListingQueryDto(), {
+          minPrice: '100.00',
+          maxPrice: '99.99',
+        }),
+      ),
     ).rejects.toMatchObject({ code: 'VALIDATION_FAILED', status: 422 });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });

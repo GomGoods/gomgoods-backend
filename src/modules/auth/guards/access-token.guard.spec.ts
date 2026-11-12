@@ -6,6 +6,7 @@ import { AccessTokenGuard } from './access-token.guard.js';
 
 function protectedContext(token?: string): ExecutionContext {
   return {
+    getType: () => 'http',
     getHandler: vi.fn(),
     getClass: vi.fn(),
     switchToHttp: () => ({
