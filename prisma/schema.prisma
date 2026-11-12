@@ -128,6 +128,22 @@ enum CampaignStatus {
   CANCELLED
 }
 
+enum CampaignType {
+  COMMUNITY_EVENT
+  ITEM_DONATION
+  COMMUNITY_CHALLENGE
+}
+
+enum ParticipationStatus {
+  REGISTERED
+  IN_PROGRESS
+  SUBMITTED
+  VERIFIED
+  REJECTED
+  WITHDRAWN
+  REVOKED
+}
+
 // Community and support
 enum PostStatus {
   DRAFT
@@ -201,6 +217,8 @@ model User {
   bids                      Bid[]
   disputes                  Dispute[]
   campaignParticipations    CampaignParticipant[]
+  organizedCampaigns        Campaign[] @relation("CampaignOrganizer")
+  campaignActions           CampaignAudit[]
   posts                     Post[]
   comments                  Comment[]
   reactions                 Reaction[]
@@ -719,10 +737,20 @@ model Campaign {
   status      CampaignStatus @default(DRAFT)
   createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  type CampaignType @default(COMMUNITY_EVENT)
+  organizerId String? @map("organizer_id") @db.Uuid
+  instructions String @default("") @db.Text
+  completionCriteria String @default("") @map("completion_criteria") @db.Text
+  eligibility String @default("Tài khoản USER đang hoạt động") @db.Text
+  minimumAccountAgeDays Int @default(0) @map("minimum_account_age_days")
+  participationLimit Int? @map("participation_limit")
 
   participants CampaignParticipant[]
+  organizer User? @relation("CampaignOrganizer", fields: [organizerId], references: [id], onDelete: Restrict)
+  actions CampaignAudit[]
 
   @@index([status, startsAt])
+  @@index([createdAt, id])
   @@map("CAMPAIGN")
 }
 
@@ -732,13 +760,63 @@ model CampaignParticipant {
   userId     String   @map("user_id") @db.Uuid
   score      Int      @default(0)
   joinedAt   DateTime @default(now()) @map("joined_at") @db.Timestamptz(6)
+  status ParticipationStatus @default(REGISTERED)
+  evidenceText String? @map("evidence_text") @db.Text
+  evidenceUrl String? @map("evidence_url") @db.Text
+  submissionKey String? @map("submission_key") @db.Uuid
+  submittedAt DateTime? @map("submitted_at") @db.Timestamptz(3)
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  actions CampaignAudit[]
+  achievement CampaignAchievement?
 
   @@unique([campaignId, userId])
   @@index([userId])
+  @@index([campaignId, status, joinedAt, id], map: "CAMPAIGN_PARTICIPANT_campaign_id_status_joined_at_participant_i")
   @@map("CAMPAIGN_PARTICIPANT")
+}
+
+model CampaignAudit {
+  id String @id @default(uuid()) @map("action_id") @db.Uuid
+  sequence BigInt @unique @default(autoincrement())
+  campaignId String @map("campaign_id") @db.Uuid
+  participantId String? @map("participant_id") @db.Uuid
+  actorId String @map("actor_id") @db.Uuid
+  action String @db.VarChar(30)
+  fromStatus String? @map("from_status") @db.VarChar(30)
+  toStatus String @map("to_status") @db.VarChar(30)
+  note String @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  participant CampaignParticipant? @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  achievement CampaignAchievement?
+  @@index([campaignId, createdAt, id])
+  @@map("CAMPAIGN_AUDIT")
+}
+
+model CampaignAchievement {
+  id String @id @default(uuid()) @map("achievement_id") @db.Uuid
+  participantId String @unique @map("participant_id") @db.Uuid
+  verificationId String @unique @map("verification_id") @db.Uuid
+  issuedAt DateTime @default(now()) @map("issued_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  featuredSlot Int? @map("featured_slot") @db.SmallInt
+  participant CampaignParticipant @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  verification CampaignAudit @relation(fields: [verificationId], references: [id], onDelete: Restrict)
+  @@map("CAMPAIGN_ACHIEVEMENT")
+}
+
+model CampaignRateLimit {
+  userId String @map("user_id") @db.Uuid
+  operation String @db.VarChar(30)
+  requestCount Int @map("request_count")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  @@id([userId, operation])
+  @@index([expiresAt])
+  @@map("CAMPAIGN_RATE_LIMIT")
 }
 
 model Post {

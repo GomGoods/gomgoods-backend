@@ -5,6 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { HttpThrottlerGuard } from './common/guards/http-throttler.guard.js';
 import { ChatModule } from './modules/chat/chat.module.js';
 import { ForumModule } from './modules/forum/forum.module.js';
+import { CampaignModule } from './modules/campaigns/campaign.module.js';
 
 import { ApiExceptionFilter } from './common/filters/api-exception.filter.js';
 import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor.js';
@@ -53,6 +54,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     PaymentsModule,
     ChatModule,
     ForumModule,
+    CampaignModule,
     ShipmentsModule,
     ProductsModule,
     ListingsModule,
