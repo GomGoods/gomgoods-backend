@@ -33,6 +33,7 @@ describe('ListingsService', () => {
         update: vi.fn(),
       },
     };
+    Object.assign(prisma,{$queryRaw:vi.fn().mockResolvedValue([]),$transaction:vi.fn(callback=>callback(prisma))});
     const service = new ListingsService(prisma as never);
 
     await expect(
@@ -55,6 +56,7 @@ describe('ListingsService', () => {
         update: vi.fn(),
       },
     };
+    Object.assign(prisma,{$queryRaw:vi.fn().mockResolvedValue([]),$transaction:vi.fn(callback=>callback(prisma))});
     const service = new ListingsService(prisma as never);
 
     await expect(

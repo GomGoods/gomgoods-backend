@@ -38,6 +38,7 @@ export class CartService {
   async addItem(user: SafeUser, input: AddCartItemDto) {
     return this.prisma.$transaction(async (tx) => {
       const cart = await lockCart(tx, user.id);
+      await tx.$queryRaw`SELECT listing_id FROM "LISTING" WHERE listing_id=${input.listingId}::uuid FOR SHARE`;
       const listing = await tx.listing.findUnique({
         where: { id: input.listingId },
         select: {
@@ -45,6 +46,7 @@ export class CartService {
           sellerUserId: true,
           status: true,
           quantity: true,
+          sellingMode: true,
           sellerUser: { select: { status: true } },
           product: {
             select: {
@@ -55,7 +57,7 @@ export class CartService {
           },
         },
       });
-      if (!listing || !this.isListingAvailable(listing)) {
+      if (!listing || listing.sellingMode !== 'FIXED_PRICE' || !this.isListingAvailable(listing)) {
         throw new ApiException(
           'RESOURCE_NOT_FOUND',
           'Listing is not available',

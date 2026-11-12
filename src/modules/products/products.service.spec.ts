@@ -73,6 +73,8 @@ describe('ProductsService', () => {
   it('archives a product and soft-removes only non-terminal related listings atomically', async () => {
     const productId = '00000000-0000-4000-8000-000000000040';
     const transaction = {
+      $queryRaw: vi.fn().mockResolvedValue([]),
+      auction: { findFirst: vi.fn().mockResolvedValue(null) },
       listing: { updateMany: vi.fn().mockResolvedValue({ count: 2 }) },
       product: {
         update: vi.fn().mockResolvedValue({

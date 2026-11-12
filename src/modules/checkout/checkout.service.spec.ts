@@ -74,6 +74,7 @@ describe('CheckoutService', () => {
               condition: 'GOOD',
               description: null,
               status: 'ACTIVE',
+              sellingMode: 'FIXED_PRICE',
               sellerUser: {
                 id: '00000000-0000-4000-8000-000000000099',
                 username: 'seller',

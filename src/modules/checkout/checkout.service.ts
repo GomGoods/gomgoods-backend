@@ -20,7 +20,7 @@ import { orderSelect } from '../orders/order.select.js';
 import type { SafeUser } from '../users/user.select.js';
 import type { CheckoutDto } from './dto/checkout.dto.js';
 
-const PREPAID_EXPIRY_MINUTES = 30;
+import { PREPAID_EXPIRY_MINUTES } from '../orders/order-policy.js';
 
 type CheckoutListing = Awaited<
   ReturnType<CheckoutService['loadCheckoutItems']>
@@ -115,6 +115,7 @@ export class CheckoutService {
           where: {
             id: item.listingId,
             status: ListingStatus.ACTIVE,
+            sellingMode: 'FIXED_PRICE',
             quantity: { gte: item.quantity },
           },
           data: { quantity: { decrement: item.quantity } },
@@ -236,6 +237,7 @@ export class CheckoutService {
             condition: true,
             description: true,
             status: true,
+            sellingMode: true,
             sellerUser: {
               select: { id: true, username: true, status: true },
             },
@@ -264,7 +266,7 @@ export class CheckoutService {
   }
 
   private assertCheckoutEligible(listing: CheckoutListing, buyerId: string) {
-    if (listing.status !== ListingStatus.ACTIVE || listing.quantity <= 0) {
+    if (listing.status !== ListingStatus.ACTIVE || listing.quantity <= 0 || listing.sellingMode !== 'FIXED_PRICE') {
       throw new ApiException(
         'RESOURCE_NOT_FOUND',
         'Listing is not available for checkout',

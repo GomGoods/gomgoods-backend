@@ -53,6 +53,11 @@ enum ListingStatus {
   REMOVED
 }
 
+enum SellingMode {
+  FIXED_PRICE
+  AUCTION
+}
+
 // Commerce
 enum OrderStatus {
   PENDING
@@ -111,6 +116,10 @@ enum AuctionStatus {
   LIVE
   ENDED
   CANCELLED
+  CLOSED_UNSOLD
+  AWAITING_PAYMENT
+  SETTLED
+  DEFAULTED
 }
 
 enum DisputeStatus {
@@ -282,6 +291,7 @@ model Address {
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   orders Order[]
+  auctionBids Bid[]
 
   @@index([userId])
   @@map("ADDRESS")
@@ -381,6 +391,7 @@ model Listing {
   condition    ListingCondition
   description  String?          @db.Text
   status       ListingStatus    @default(DRAFT)
+  sellingMode SellingMode @default(FIXED_PRICE) @map("selling_mode")
   createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
 
@@ -499,6 +510,7 @@ model Order {
   payments      Payment[]
   shipments     Shipment[]
   disputes      Dispute[]
+  wonAuction Auction?
 
   @@index([userId, createdAt])
   @@index([checkoutGroupId])
@@ -670,10 +682,16 @@ model Auction {
   status        AuctionStatus @default(DRAFT)
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  managed Boolean @default(false)
+  originalEndsAt DateTime? @map("original_end_time") @db.Timestamptz(3)
+  version BigInt @default(0)
+  orderId String? @unique @map("order_id") @db.Uuid
 
   listing Listing @relation(fields: [listingId], references: [id], onDelete: Restrict)
   winner  User?   @relation("AuctionWinner", fields: [winnerId], references: [id], onDelete: Restrict)
   bids    Bid[]
+  order Order? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  events AuctionEvent[]
 
   @@index([status, endsAt])
   @@map("AUCTION")
@@ -685,13 +703,43 @@ model Bid {
   userId    String   @map("user_id") @db.Uuid
   amount    Decimal  @db.Decimal(14, 2)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  idempotencyKey String? @map("idempotency_key") @db.Uuid
+  sequence BigInt?
+  addressId String? @map("address_id") @db.Uuid
+  shippingSnapshot Json? @map("shipping_snapshot")
 
   auction Auction @relation(fields: [auctionId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  address Address? @relation(fields: [addressId], references: [id], onDelete: Restrict)
 
   @@index([auctionId, createdAt])
   @@index([userId, createdAt])
+  @@unique([auctionId, userId, idempotencyKey])
+  @@unique([auctionId, sequence])
   @@map("BID")
+}
+
+model AuctionEvent {
+  id String @id @default(uuid()) @map("event_id") @db.Uuid
+  auctionId String @map("auction_id") @db.Uuid
+  actorId String? @map("actor_id") @db.Uuid
+  version BigInt
+  action String @db.VarChar(40)
+  note String @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  auction Auction @relation(fields: [auctionId], references: [id], onDelete: Restrict)
+  @@unique([auctionId, version])
+  @@map("AUCTION_EVENT")
+}
+
+model AuctionRateLimit {
+  userId String @map("user_id") @db.Uuid
+  operation String @db.VarChar(30)
+  count Int
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  @@id([userId, operation])
+  @@index([expiresAt])
+  @@map("AUCTION_RATE_LIMIT")
 }
 
 model Dispute {

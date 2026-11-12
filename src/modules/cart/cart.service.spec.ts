@@ -39,6 +39,7 @@ describe('CartService', () => {
           id: '00000000-0000-4000-8000-000000000020',
           sellerUserId: user.id,
           status: ListingStatus.ACTIVE,
+          sellingMode: 'FIXED_PRICE',
           quantity: 1,
           sellerUser: { status: 'ACTIVE' },
           product: null,
@@ -115,6 +116,7 @@ describe('CartService', () => {
           id: '00000000-0000-4000-8000-000000000020',
           sellerUserId: null,
           status: ListingStatus.ACTIVE,
+          sellingMode: 'FIXED_PRICE',
           quantity: 2,
           sellerUser: null,
           product: {
