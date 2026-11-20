@@ -1,143 +1,101 @@
 # GomGoods Backend
 
-Backend API for **GomGoods**, a C2C marketplace for Pop-Culture & ACG goods.
+Backend API for **GomGoods**, a C2C marketplace focused on anime, manga, games, and pop-culture collectibles.
 
-GomGoods connects buyers, individual sellers, and store sellers in a community-driven marketplace where users can discover, buy, sell, collect, and trade products.
+GomGoods supports individual sellers and storefronts, bringing product discovery, buying, selling, and community features into one platform.
 
-## ✨ Core Features
+This repository contains the backend services, database schema, and business logic powering the application.
 
-- 👤 **User & Store Management** — Manage user accounts, store sellers, profiles, and seller reputation.
-- 🛍️ **Marketplace** — Manage products, listings, categories, search, filtering, and product availability.
-- 🛒 **Orders & Payments** — Handle carts, orders, order items, payment transactions, and refunds.
-- 📦 **Shipping** — Manage shipments, shipment items, delivery status, and tracking.
-- 🔨 **Auction** — Create auctions, place bids, and determine auction results.
-- 💬 **Chat** — Support conversations and direct communication between users.
-- ⭐ **Reviews & Collections** — Manage transaction reviews and saved products.
-- 🗣️ **Forum** — Support community posts, comments, reactions, reports, and transaction discussions.
-- 🎁 **Campaigns** — Manage community campaigns and participant contributions.
-- ⚖️ **Disputes** — Handle transaction disputes and supporting evidence.
-- 🛡️ **Support** — Provide user support and issue management.
-- 🤖 **AI Support** — Assist with common user requests and transaction-related support.
+## Tech Stack
 
-## 🛠️ Tech Stack
+- **Framework:** NestJS, TypeScript
+- **Database:** PostgreSQL
+- **ORM:** Prisma
+- **API:** REST, Socket.IO
+- **Payments:** SePay, VietQR
+- **Testing:** Vitest, PostgreSQL E2E
+- **Development:** Docker, Git
 
-| Technology | Purpose |
-|---|---|
-| NestJS | Backend framework |
-| TypeScript | Type-safe development |
-| PostgreSQL | Relational database |
-| Prisma | ORM and database access |
-| REST API | Client-server communication |
-| Vitest | Testing |
+## Features
 
-## 🏗️ Architecture
+- User authentication and session management
+- Personal listings and store management
+- Product discovery, search, and filtering
+- Cart, checkout, orders, and shipments
+- Payment processing and webhook verification
+- Real-time buyer–seller messaging
+- Community forums and moderation
+- Community campaigns and achievements
+- Product auctions and bidding
+- Image upload and media management
 
-The backend follows a **modular monolith** architecture.
+## Architecture
 
-Business domains are organized into independent modules while sharing the same application and database infrastructure.
+The backend uses a modular NestJS architecture, with separate modules for authentication, marketplace operations, transactions, messaging, and community features.
 
-The backend provides APIs for the GomGoods frontend and is responsible for:
+Prisma manages database access and migrations, while PostgreSQL stores application data.
 
-- Business logic
-- Data validation
-- Authentication & authorization
-- Database operations
-- Transaction processing
-- Marketplace workflows
-- Communication with external services
+REST APIs handle standard requests, and Socket.IO supports real-time interactions such as messaging and auctions.
 
-## 👥 Account Model
+## Getting Started
 
-GomGoods distinguishes between:
+### Requirements
 
-- **User** — A registered account that can purchase products and sell personal items.
-- **Store Seller** — A dedicated seller/store account operating as a storefront on the marketplace.
+- Node.js 22.23.4
+- npm
+- Docker Desktop
+- PostgreSQL
 
-This allows the platform to support both peer-to-peer selling and established sellers.
+### Installation
 
-## 🗄️ Database
-
-The application uses **PostgreSQL** with **Prisma ORM**.
-
-The database is designed around the core GomGoods domains, including:
-
-- Users & Stores
-- Products & Listings
-- Orders & Payments
-- Shipments
-- Auctions & Bids
-- Reviews & Collections
-- Forum & Community
-- Campaigns
-- Disputes & Support
-- Conversations & Messages
-
-Database schema and migrations are managed through Prisma.
-
-## 🔗 Frontend
-
-The backend serves as the API layer for the GomGoods frontend.
-
-```text
-GomGoods Frontend
-        │
-        │ REST API
-        ▼
-GomGoods Backend
-        │
-        ▼
-   PostgreSQL
+```bash
+git clone https://github.com/Alight09004/gomgoods-backend.git
+cd gomgoods-backend
+npm ci
 ```
 
-## Phase 1 API
+### Environment Configuration
 
-Implemented endpoints use the `/api` prefix:
+Use the provided `.env.example` as a reference for local environment configuration.
 
-- `GET /api/health`
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-- `GET /api/auth/me`
+Database credentials, JWT secrets, and payment integration settings must be configured separately. Do not commit real credentials.
 
-Registration and login return a 15-minute session-bound Bearer access token and set an opaque refresh credential in an HttpOnly cookie. Refresh credentials have a fixed 30-day lifetime and rotate on every successful refresh.
+### Database
 
-Phase 2 adds:
+The project includes Docker Compose configurations for local development and isolated E2E testing.
 
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `POST /api/auth/logout-all`
+Apply the appropriate Prisma migrations only after verifying the target database.
 
-All authentication POST requests require an exact configured `Origin` and `X-GomGoods-CSRF: 1`. Browser clients must use credentialed requests. Access tokens belong in memory and the `Authorization` header; the refresh credential is never returned in JSON or stored by frontend JavaScript.
+### Run the Backend
 
-Refresh rotation permits exactly one successful use. A duplicate received within 10 seconds returns `409 REFRESH_ALREADY_ROTATED` without clearing the cookie or revoking the session. Reuse after 10 seconds is treated as replay and revokes only that session family. This grace window cannot distinguish a delayed legitimate request from an attacker: an attacker inside the window receives no token, while a legitimate request delayed beyond it can revoke the session and require login. If the successful rotation response is lost before its cookie is stored, the client must authenticate again.
+```bash
+npm run start:dev
+```
 
-Successful responses use `{ "success": true, "data": ... }`. Errors use `{ "success": false, "error": { "code": "...", "message": "...", "details": [] } }`.
+The API uses port `3000` in the current local development setup.
 
-## Local setup
+## Testing
 
-1. Install the lockfile dependencies with `npm ci`.
-2. Copy `.env.example` to `.env` and replace every placeholder.
-3. Start PostgreSQL with `docker compose -f docker-compose.dev.yml up -d`.
-4. Apply the committed migration with `npm run db:migrate:deploy`.
-5. Optionally seed local data with `npm run db:seed`.
-6. Start the API with `npm run start:dev`.
+Run the available checks:
 
-`SEED_USER_PASSWORD` is shared by the three fixed local seed accounts and is hashed with Argon2 before storage. It is strictly a local-development credential and must never be reused in staging or production.
-
-Swagger is available at `/api/docs` when `SWAGGER_ENABLED=true`. Keep it disabled or protected in production.
-
-Refresh-cookie settings are deployment-specific. Production must explicitly set `AUTH_COOKIE_SECURE=true` and choose `AUTH_COOKIE_SAME_SITE` based on the real frontend/API topology. Use `lax` or `strict` only for same-site deployments; a genuinely cross-site deployment requires `none` with HTTPS. `AUTH_COOKIE_DOMAIN` is optional and omitted for a host-only cookie. CORS never permits wildcard origins with credentials.
-
-The current frontend mock authentication is not integrated by this backend phase. Frontend integration must separately add `credentials: "include"`, the CSRF header, in-memory access-token handling, and single-flight refresh behavior.
-
-Registration and login are limited in memory to five attempts per minute per tracker; refresh allows 30 attempts per minute, and logout routes retain the global limit. A multi-instance production deployment must use a shared throttling store before launch.
-
-## Verification
-
-Use a separate PostgreSQL database whose name contains `test`. Copy `.env.test.example` to `.env.test`; `TEST_DATABASE_URL` must not equal `DATABASE_URL`. The e2e harness refuses cleanup unless these safeguards pass, and cleanup is limited to users created under the `@e2e.gomgoods.local` domain.
-
-```text
-npm run build
-npm run lint
+```bash
 npm run test:unit
 npm run test:e2e
+npm run build
+npm run lint
+npm run typecheck
 ```
+
+E2E tests use an isolated PostgreSQL test database. They must not run against development or production data.
+
+## Documentation
+
+Additional implementation details, API contracts, integration guides, and test reports are available in the [`docs/`](docs/) directory.
+
+## Frontend
+
+The frontend is maintained separately in [gomgoods-frontend](https://github.com/Alight09004/gomgoods-frontend).
+
+## License
+
+See [LICENSE](LICENSE) for the repository's licensing terms.
